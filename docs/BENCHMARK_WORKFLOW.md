@@ -66,6 +66,34 @@ Example:
 The skill stops before submitting the new observation; the maintainer
 decides whether to publish it as a second `n_obs` on the wiki or discard.
 
+### `/benchmark-extend-run <run-id> <new-tier>`
+
+Take a run produced under one tier (e.g. `quick`) and extend it to a
+larger tier (`standard` or `full`) without re-translating the pairs
+already covered. Only the delta is translated and evaluated.
+
+Concretely, going from `quick` (8 pairs, 45 translations) to `full`
+(28 pairs, ~245 translations) on a model that's already in `quick` only
+requires translating the ~190 new translations. The old 45 stay
+untouched.
+
+Example:
+
+```text
+/benchmark-extend-run 06e8de45 full
+```
+
+Behind the scenes the skill runs:
+
+```text
+python -m benchmark.cli run -p <provider> -m <model> --no-evaluate --pair-set <new-tier> --resume <run-id>
+```
+
+— and `_generate_jobs` filters out the (text, target_lang, model)
+triples already present in the run. Then it dumps only the unscored new
+translations, scores them, and applies. The user replaces the old
+submission with the expanded one when ready.
+
 ### `/benchmark-publish-wiki`
 
 Regenerate and push the wiki from whatever's currently in

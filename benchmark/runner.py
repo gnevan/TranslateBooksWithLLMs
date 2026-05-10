@@ -294,7 +294,13 @@ class BenchmarkRunner:
         if resume_run:
             run = resume_run
             run.status = "running"
-            self._log("info", f"Resuming run {run.run_id} ({run.total_completed}/{run.total_expected} completed)")
+            # When resuming with broader pairs/models, merge the new metadata in
+            # so the run.json reflects the union of completed and pending work.
+            run.models = sorted(set(run.models) | set(models))
+            run.languages = sorted(set(run.languages) | set(target_codes))
+            if evaluate:
+                run.evaluator_model = evaluator_model
+            self._log("info", f"Resuming run {run.run_id} ({run.total_completed} already completed)")
         else:
             run = BenchmarkRun(
                 run_id=str(uuid.uuid4())[:8],
