@@ -113,37 +113,47 @@ export const ApiKeyUtils = {
     },
 
     /**
-     * Setup API key field with proper placeholder/indicator and status badge
+     * Setup API key field with proper placeholder/indicator and status badge.
+     * When `keyCount > 1`, signals the active rotation pool size so users can
+     * verify their multi-key .env config actually parsed.
+     *
      * @param {string} fieldId - Input field ID
      * @param {boolean} isConfigured - Whether key is configured in .env
-     * @param {string} maskedValue - Masked value (e.g., "***1234") if configured
+     * @param {string} maskedValue - Masked indicator (e.g. "***1234") for the last key
+     * @param {number} [keyCount=1] - Number of keys in the rotation pool
      */
-    setupField(fieldId, isConfigured, maskedValue) {
+    setupField(fieldId, isConfigured, maskedValue, keyCount = 1) {
         const field = DomHelpers.getElement(fieldId);
         if (!field) return;
 
         const statusSpan = DomHelpers.getElement(this.getStatusIdForField(fieldId));
 
         if (isConfigured) {
-            // Key is configured in .env - show masked indicator as placeholder
             field.value = '';
-            field.placeholder = maskedValue
-                ? `Using .env key (${maskedValue})`
-                : 'Using .env key';
+            const count = Math.max(1, keyCount | 0);
+            if (count > 1) {
+                field.placeholder = maskedValue
+                    ? `Using ${count} .env keys (last: ${maskedValue})`
+                    : `Using ${count} .env keys`;
+            } else {
+                field.placeholder = maskedValue
+                    ? `Using .env key (${maskedValue})`
+                    : 'Using .env key';
+            }
             field.dataset.envConfigured = 'true';
+            field.dataset.envKeyCount = String(count);
 
-            // Update status badge
             if (statusSpan) {
-                statusSpan.textContent = '✓ Configured';
+                statusSpan.textContent = count > 1
+                    ? `✓ ${count} keys (rotation)`
+                    : '✓ Configured';
                 statusSpan.className = 'key-status configured';
             }
         } else {
-            // Key is NOT configured - show instruction placeholder
             field.value = '';
             field.dataset.envConfigured = 'false';
-            // Keep original placeholder from HTML
+            field.dataset.envKeyCount = '0';
 
-            // Update status badge
             if (statusSpan) {
                 statusSpan.textContent = '⚠ Not set';
                 statusSpan.className = 'key-status not-configured';

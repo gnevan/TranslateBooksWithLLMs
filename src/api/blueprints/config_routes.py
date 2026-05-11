@@ -27,6 +27,7 @@ def get_config_path():
 import src.config as _config
 from src.config import reload_config
 from src import __version__
+from src.core.llm.base import normalize_api_keys
 
 # Setup logger for this module
 logger = logging.getLogger('config_routes')
@@ -113,13 +114,24 @@ def create_config_blueprint(server_session_id=None):
     @bp.route('/api/config', methods=['GET'])
     def get_default_config():
         """Get default configuration values"""
-        # For API keys, send a masked indicator if configured, empty string if not
-        # This prevents browser autocomplete from filling in random values
-        def mask_api_key(key):
-            """Return masked indicator if key exists, empty string otherwise"""
-            if key and len(key) > 4:
-                return "***" + key[-4:]  # Show last 4 chars as indicator
-            return ""  # Empty = not configured
+        # For API keys, send a masked indicator if configured, empty string if not.
+        # Also expose the pool size so the UI can signal active multi-key rotation.
+        def mask_api_key(raw):
+            """Return (masked_last_key, key_count). Empty/0 means not configured."""
+            keys = normalize_api_keys(raw)
+            if not keys:
+                return "", 0
+            last = keys[-1]
+            masked = "***" + last[-4:] if len(last) > 4 else "***"
+            return masked, len(keys)
+
+        gemini_mask, gemini_count = mask_api_key(_config.GEMINI_API_KEY)
+        openai_mask, openai_count = mask_api_key(_config.OPENAI_API_KEY)
+        openrouter_mask, openrouter_count = mask_api_key(_config.OPENROUTER_API_KEY)
+        mistral_mask, mistral_count = mask_api_key(_config.MISTRAL_API_KEY)
+        deepseek_mask, deepseek_count = mask_api_key(_config.DEEPSEEK_API_KEY)
+        poe_mask, poe_count = mask_api_key(_config.POE_API_KEY)
+        nim_mask, nim_count = mask_api_key(_config.NIM_API_KEY)
 
         config_response = {
             "api_endpoint": _config.API_ENDPOINT,
@@ -133,20 +145,27 @@ def create_config_blueprint(server_session_id=None):
             "max_attempts": _config.MAX_TRANSLATION_ATTEMPTS,
             "retry_delay": 2,
             "supported_formats": ["txt", "epub", "srt"],
-            "gemini_api_key": mask_api_key(_config.GEMINI_API_KEY),
-            "openai_api_key": mask_api_key(_config.OPENAI_API_KEY),
-            "openrouter_api_key": mask_api_key(_config.OPENROUTER_API_KEY),
-            "mistral_api_key": mask_api_key(_config.MISTRAL_API_KEY),
-            "deepseek_api_key": mask_api_key(_config.DEEPSEEK_API_KEY),
-            "poe_api_key": mask_api_key(_config.POE_API_KEY),
-            "nim_api_key": mask_api_key(_config.NIM_API_KEY),
-            "gemini_api_key_configured": bool(_config.GEMINI_API_KEY),
-            "openai_api_key_configured": bool(_config.OPENAI_API_KEY),
-            "openrouter_api_key_configured": bool(_config.OPENROUTER_API_KEY),
-            "mistral_api_key_configured": bool(_config.MISTRAL_API_KEY),
-            "deepseek_api_key_configured": bool(_config.DEEPSEEK_API_KEY),
-            "poe_api_key_configured": bool(_config.POE_API_KEY),
-            "nim_api_key_configured": bool(_config.NIM_API_KEY),
+            "gemini_api_key": gemini_mask,
+            "openai_api_key": openai_mask,
+            "openrouter_api_key": openrouter_mask,
+            "mistral_api_key": mistral_mask,
+            "deepseek_api_key": deepseek_mask,
+            "poe_api_key": poe_mask,
+            "nim_api_key": nim_mask,
+            "gemini_api_key_count": gemini_count,
+            "openai_api_key_count": openai_count,
+            "openrouter_api_key_count": openrouter_count,
+            "mistral_api_key_count": mistral_count,
+            "deepseek_api_key_count": deepseek_count,
+            "poe_api_key_count": poe_count,
+            "nim_api_key_count": nim_count,
+            "gemini_api_key_configured": gemini_count > 0,
+            "openai_api_key_configured": openai_count > 0,
+            "openrouter_api_key_configured": openrouter_count > 0,
+            "mistral_api_key_configured": mistral_count > 0,
+            "deepseek_api_key_configured": deepseek_count > 0,
+            "poe_api_key_configured": poe_count > 0,
+            "nim_api_key_configured": nim_count > 0,
             "output_filename_pattern": _config.OUTPUT_FILENAME_PATTERN
         }
 
@@ -160,20 +179,25 @@ def create_config_blueprint(server_session_id=None):
         })
 
     def _resolve_api_key(provided_key, env_var_name, config_default):
-        """Resolve API key from provided value, .env marker, or config default
+        """Resolve API key from provided value, .env marker, or config default.
 
-        Args:
-            provided_key: Key from request (could be actual key or '__USE_ENV__')
-            env_var_name: Environment variable name to check
-            config_default: Default value from config
-
-        Returns:
-            Resolved API key or None
+        Returns the raw (possibly comma-separated) value — provider constructors
+        normalize via base.py. Callers that bypass providers (e.g. listing
+        endpoints using requests.get directly) must call _first_key() themselves.
         """
         if provided_key and provided_key != '__USE_ENV__':
             return provided_key
-        # Use .env value if marker provided or no key given
         return os.getenv(env_var_name, config_default)
+
+    def _first_key(raw):
+        """Pick the first usable key from a (possibly comma-separated) value.
+
+        Use for HTTP endpoints called directly (model listings) where only a
+        single valid key is needed for the read — rotation only matters for the
+        translation path.
+        """
+        keys = normalize_api_keys(raw)
+        return keys[0] if keys else None
 
     def _get_openrouter_models(provided_api_key=None):
         """Get available text-only models from OpenRouter API"""
@@ -397,7 +421,7 @@ def create_config_blueprint(server_session_id=None):
 
     def _get_nim_models(provided_api_key=None):
         """Get available models from NVIDIA NIM API"""
-        api_key = _resolve_api_key(provided_api_key, 'NIM_API_KEY', _config.NIM_API_KEY)
+        api_key = _first_key(_resolve_api_key(provided_api_key, 'NIM_API_KEY', _config.NIM_API_KEY))
 
         # Use NIM_MODEL from .env, fallback to meta/llama-3.1-8b-instruct
         default_model = _config.NIM_MODEL if _config.NIM_MODEL else "meta/llama-3.1-8b-instruct"
@@ -513,7 +537,7 @@ def create_config_blueprint(server_session_id=None):
         Always tries to fetch models dynamically from any OpenAI-compatible endpoint.
         Falls back to static list if dynamic fetch fails.
         """
-        api_key = _resolve_api_key(provided_api_key, 'OPENAI_API_KEY', _config.OPENAI_API_KEY)
+        api_key = _first_key(_resolve_api_key(provided_api_key, 'OPENAI_API_KEY', _config.OPENAI_API_KEY))
 
         # Determine base URL from endpoint
         if api_endpoint:

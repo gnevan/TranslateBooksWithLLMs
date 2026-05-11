@@ -7,13 +7,33 @@ as well as common data structures like LLMResponse.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterable, Optional, Union
+from typing import Iterable, List, Optional, Union
 import httpx
 
 from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, REQUEST_TIMEOUT
 from src.utils.telemetry import get_telemetry_headers
 from src.core.llm.utils.extraction import TranslationExtractor
 from src.core.llm.key_pool import KeyPool
+
+
+def normalize_api_keys(raw: Optional[Union[str, Iterable[str]]]) -> List[str]:
+    """Split comma/newline-separated key strings into a clean list.
+
+    Accepts a single key, a "k1,k2,k3" string (the documented multi-key
+    format used by .env, the Web UI input, and the CLI), or an iterable of
+    keys. Whitespace and empty fragments are trimmed; order is preserved
+    for round-robin rotation.
+
+    Returns an empty list when no usable key is provided.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, str):
+        return [k for k in raw if k]
+    if "," not in raw and "\n" not in raw:
+        return [raw] if raw else []
+    parts = [p.strip() for p in raw.replace("\n", ",").split(",")]
+    return [p for p in parts if p]
 
 
 @dataclass
@@ -51,11 +71,9 @@ class LLMProvider(ABC):
         self._extractor = TranslationExtractor(TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT)
         self._client = None
         self._key_pool: Optional[KeyPool] = None
-        if api_keys:
-            keys_iter = [api_keys] if isinstance(api_keys, str) else list(api_keys)
-            keys_iter = [k for k in keys_iter if k]
-            if keys_iter:
-                self._key_pool = KeyPool(keys_iter, provider_name=provider_name or "unknown")
+        keys_iter = normalize_api_keys(api_keys)
+        if keys_iter:
+            self._key_pool = KeyPool(keys_iter, provider_name=provider_name or "unknown")
 
     @property
     def api_key(self) -> Optional[str]:

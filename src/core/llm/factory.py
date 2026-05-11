@@ -6,7 +6,6 @@ the appropriate provider based on the provider_type parameter.
 """
 
 import os
-from typing import List, Optional, Union
 
 from src.config import (
     API_ENDPOINT, DEFAULT_MODEL, OLLAMA_NUM_CTX,
@@ -17,7 +16,7 @@ from src.config import (
     POE_API_KEY, POE_MODEL, POE_API_ENDPOINT,
     NIM_API_KEY, NIM_MODEL, NIM_API_ENDPOINT
 )
-from .base import LLMProvider
+from .base import LLMProvider, normalize_api_keys
 from .providers.ollama import OllamaProvider
 from .providers.openai import OpenAICompatibleProvider
 from .providers.gemini import GeminiProvider
@@ -27,31 +26,16 @@ from .providers.deepseek import DeepSeekProvider
 from .providers.poe import PoeProvider
 
 
-def _normalize_keys(
-    raw: Optional[Union[str, List[str]]]
-) -> Optional[Union[str, List[str]]]:
-    """Normalize an api_key argument to support multi-key pools.
+def _require_key(raw, error_message: str):
+    """Validate that at least one usable key is present in `raw`.
 
-    A user can supply keys as:
-        - None / "" → returned as-is (caller raises if required)
-        - "single_key" → returned as the same string (single-key pool)
-        - "k1,k2,k3" → split on commas/newlines/whitespace, returned as list
-        - ["k1", "k2"] → returned as the same list
-
-    Whitespace and empty fragments are trimmed. Order is preserved (used for
-    round-robin in the pool).
+    Used by cloud providers in the factory to surface a clear error before
+    instantiation. Returns the original `raw` value so providers receive the
+    multi-key string unchanged (the base class handles splitting).
     """
-    if raw is None:
-        return None
-    if isinstance(raw, str):
-        if "," not in raw and "\n" not in raw:
-            return raw  # single key, no parsing
-        parts = [p.strip() for p in raw.replace("\n", ",").split(",")]
-        parts = [p for p in parts if p]
-        if not parts:
-            return None
-        return parts[0] if len(parts) == 1 else parts
-    return list(raw)
+    if not normalize_api_keys(raw):
+        raise ValueError(error_message)
+    return raw
 
 
 def create_llm_provider(provider_type: str = "ollama", **kwargs) -> LLMProvider:
@@ -109,51 +93,47 @@ def create_llm_provider(provider_type: str = "ollama", **kwargs) -> LLMProvider:
         return OpenAICompatibleProvider(
             api_endpoint=api_endpoint,
             model=kwargs.get("model", DEFAULT_MODEL),
-            api_key=_normalize_keys(kwargs.get("api_key") or kwargs.get("openai_api_key")),
+            api_key=kwargs.get("api_key") or kwargs.get("openai_api_key"),
             context_window=kwargs.get("context_window") or OLLAMA_NUM_CTX,
             log_callback=kwargs.get("log_callback"),
             provider_name=pname,
         )
     elif provider_type.lower() == "gemini":
-        api_key = _normalize_keys(
-            kwargs.get("api_key") or kwargs.get("gemini_api_key") or os.getenv("GEMINI_API_KEY")
+        api_key = _require_key(
+            kwargs.get("api_key") or kwargs.get("gemini_api_key") or os.getenv("GEMINI_API_KEY"),
+            "Gemini provider requires an API key. Set GEMINI_API_KEY environment variable or pass api_key parameter."
         )
-        if not api_key:
-            raise ValueError("Gemini provider requires an API key. Set GEMINI_API_KEY environment variable or pass api_key parameter.")
         return GeminiProvider(
             api_key=api_key,
             model=kwargs.get("model", "gemini-2.0-flash")
         )
     elif provider_type.lower() == "openrouter":
-        api_key = _normalize_keys(
+        api_key = _require_key(
             kwargs.get("api_key") or kwargs.get("openrouter_api_key")
-            or os.getenv("OPENROUTER_API_KEY", OPENROUTER_API_KEY)
+            or os.getenv("OPENROUTER_API_KEY", OPENROUTER_API_KEY),
+            "OpenRouter provider requires an API key. Set OPENROUTER_API_KEY environment variable or pass api_key parameter."
         )
-        if not api_key:
-            raise ValueError("OpenRouter provider requires an API key. Set OPENROUTER_API_KEY environment variable or pass api_key parameter.")
         return OpenRouterProvider(
             api_key=api_key,
             model=kwargs.get("model", OPENROUTER_MODEL)
         )
     elif provider_type.lower() == "mistral":
-        api_key = _normalize_keys(
+        api_key = _require_key(
             kwargs.get("api_key") or kwargs.get("mistral_api_key")
-            or os.getenv("MISTRAL_API_KEY", MISTRAL_API_KEY)
+            or os.getenv("MISTRAL_API_KEY", MISTRAL_API_KEY),
+            "Mistral provider requires an API key. Set MISTRAL_API_KEY environment variable or pass api_key parameter."
         )
-        if not api_key:
-            raise ValueError("Mistral provider requires an API key. Set MISTRAL_API_KEY environment variable or pass api_key parameter.")
         return MistralProvider(
             api_key=api_key,
             model=kwargs.get("model", MISTRAL_MODEL),
             api_endpoint=MISTRAL_API_ENDPOINT
         )
     elif provider_type.lower() == "deepseek":
-        api_key = _normalize_keys(
+        api_key = _require_key(
             kwargs.get("api_key") or kwargs.get("deepseek_api_key")
-            or os.getenv("DEEPSEEK_API_KEY", DEEPSEEK_API_KEY)
+            or os.getenv("DEEPSEEK_API_KEY", DEEPSEEK_API_KEY),
+            "DeepSeek provider requires an API key. Set DEEPSEEK_API_KEY environment variable or pass api_key parameter."
         )
-        if not api_key:
-            raise ValueError("DeepSeek provider requires an API key. Set DEEPSEEK_API_KEY environment variable or pass api_key parameter.")
         return DeepSeekProvider(
             api_key=api_key,
             model=kwargs.get("model", DEEPSEEK_MODEL),
@@ -161,24 +141,22 @@ def create_llm_provider(provider_type: str = "ollama", **kwargs) -> LLMProvider:
             disable_thinking=kwargs.get("deepseek_disable_thinking", DEEPSEEK_DISABLE_THINKING)
         )
     elif provider_type.lower() == "poe":
-        api_key = _normalize_keys(
+        api_key = _require_key(
             kwargs.get("api_key") or kwargs.get("poe_api_key")
-            or os.getenv("POE_API_KEY", POE_API_KEY)
+            or os.getenv("POE_API_KEY", POE_API_KEY),
+            "Poe provider requires an API key. Get your key at https://poe.com/api_key"
         )
-        if not api_key:
-            raise ValueError("Poe provider requires an API key. Get your key at https://poe.com/api_key")
         return PoeProvider(
             api_key=api_key,
             model=kwargs.get("model", POE_MODEL),
             api_endpoint=POE_API_ENDPOINT
         )
     elif provider_type.lower() == "nim":
-        api_key = _normalize_keys(
+        api_key = _require_key(
             kwargs.get("api_key") or kwargs.get("nim_api_key")
-            or os.getenv("NIM_API_KEY", NIM_API_KEY)
+            or os.getenv("NIM_API_KEY", NIM_API_KEY),
+            "NVIDIA NIM provider requires an API key. Get your key at https://build.nvidia.com/"
         )
-        if not api_key:
-            raise ValueError("NVIDIA NIM provider requires an API key. Get your key at https://build.nvidia.com/")
         return OpenAICompatibleProvider(
             api_key=api_key,
             model=kwargs.get("model", NIM_MODEL),
