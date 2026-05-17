@@ -8,6 +8,7 @@ import logging
 import requests
 import re
 import time
+from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, send_from_directory
 from pathlib import Path
 
@@ -676,7 +677,13 @@ def create_config_blueprint(server_session_id=None):
         ollama_base_from_ui = request.args.get('api_endpoint', _config.API_ENDPOINT)
 
         try:
-            base_url = ollama_base_from_ui.split('/api/')[0]
+            parsed = urlparse(ollama_base_from_ui)
+            path = parsed.path or '/'
+            if '/api/' in path:
+                base_path = path.split('/api/')[0]
+                base_url = f"{parsed.scheme}://{parsed.netloc}{base_path}"
+            else:
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
             tags_url = f"{base_url}/api/tags"
 
             response = requests.get(tags_url, timeout=10)

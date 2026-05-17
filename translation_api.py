@@ -21,6 +21,7 @@ import logging
 import webbrowser
 import threading
 from datetime import datetime
+from urllib.parse import urlparse
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -254,7 +255,13 @@ def test_ollama_connection():
     """Test Ollama connection at startup and log result"""
     import requests
     try:
-        base_url = DEFAULT_OLLAMA_API_ENDPOINT.split('/api/')[0]
+        parsed = urlparse(DEFAULT_OLLAMA_API_ENDPOINT)
+        path = parsed.path or '/'
+        if '/api/' in path:
+            base_path = path.split('/api/')[0]
+            base_url = f"{parsed.scheme}://{parsed.netloc}{base_path}"
+        else:
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
         tags_url = f"{base_url}/api/tags"
         logger.info(f"🔍 Testing Ollama connection at {tags_url}...")
         response = requests.get(tags_url, timeout=5)
