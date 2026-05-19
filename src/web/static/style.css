@@ -848,11 +848,10 @@ select.form-control {
     align-items: center;
     justify-content: space-between;
     color: var(--text-dark);
-    transition: all 0.3s;
+    transition: background 0.2s, border-radius 0.2s, margin 0.2s, box-shadow 0.2s;
 }
 
 .prompt-options-toggle:hover {
-    transform: translateY(-1px);
     box-shadow: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
 }
 
@@ -860,18 +859,36 @@ select.form-control {
     font-weight: 600;
 }
 
-#promptOptionsIcon {
+#promptOptionsIcon,
+#settingsOptionsIcon,
+#activityLogIcon {
     transition: transform 0.2s;
     color: var(--primary-light);
 }
 
-#promptOptionsSection {
+/* When the section right after the toggle is expanded,
+   fuse header + body into a single cartouche. */
+.prompt-options-toggle:has(+ div:not(.hidden)) {
+    margin-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 1px solid var(--border-light);
+    box-shadow: -5px -5px 10px var(--shadow-light), 5px 0 10px var(--shadow-dark);
+}
+
+.prompt-options-toggle:has(+ div:not(.hidden)):hover {
+    box-shadow: -5px -5px 10px var(--shadow-light), 5px 0 10px var(--shadow-dark);
+}
+
+.prompt-options-toggle + div:not(.hidden) {
     padding: 1.5rem;
     background: var(--background-light);
-    box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
     border: 1px solid var(--border-light);
-    border-radius: 1.5rem;
+    border-top: none;
+    border-bottom-left-radius: 1rem;
+    border-bottom-right-radius: 1rem;
     margin-bottom: 1rem;
+    box-shadow: -5px 0 10px var(--shadow-light), 5px 5px 10px var(--shadow-dark);
 }
 
 /* ========================================
@@ -1375,6 +1392,98 @@ input[type="checkbox"] {
 
 .close-btn:hover {
     color: var(--text-dark);
+}
+
+/* ========================================
+   Completion Card (shown after each finished translation)
+   ======================================== */
+
+.completion-card {
+    margin-bottom: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--background-light);
+    border: 1px solid var(--success-light);
+    border-left: 4px solid var(--success-light);
+    border-radius: 1rem;
+    box-shadow: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.completion-card__header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.completion-card__title {
+    font-weight: 700;
+    color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.completion-card__title .material-symbols-outlined {
+    color: var(--success-light);
+    font-size: 1.5rem;
+}
+
+.completion-card__close {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-muted-light);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, color 0.2s;
+}
+
+.completion-card__close:hover {
+    background: var(--background-outer);
+    color: var(--text-dark);
+}
+
+.completion-card__filename {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+    word-break: break-all;
+}
+
+.completion-card__path {
+    font-size: 0.8125rem;
+    color: var(--text-muted-light);
+    word-break: break-all;
+}
+
+.completion-card__path code {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    background: var(--background-outer);
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.35rem;
+}
+
+.completion-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.completion-card__actions .btn {
+    padding: 0.5rem 0.9rem;
+    font-size: 0.875rem;
+}
+
+.completion-card__actions .btn .material-symbols-outlined {
+    font-size: 1.1rem;
 }
 
 /* ========================================

@@ -230,4 +230,29 @@ def create_file_blueprint(output_dir):
             current_app.logger.error(f"Error in open_local_file for {filename}: {str(e)}")
             return jsonify({"error": "Failed to open file", "details": str(e)}), 500
 
+    @bp.route('/api/files/<path:filename>/reveal', methods=['POST'])
+    def reveal_local_file(filename):
+        """Reveal a file in the system's file explorer (selecting it when possible)"""
+        try:
+            is_valid, error = PathValidator.validate_filename(filename)
+            if not is_valid:
+                return jsonify({"error": error}), 400
+
+            success, message, abs_path = file_service.reveal_file(filename)
+
+            if success:
+                current_app.logger.info(f"Revealed file: {filename} at {abs_path}")
+                return jsonify({
+                    "success": True,
+                    "message": message,
+                    "file_path": abs_path
+                })
+            else:
+                current_app.logger.error(f"Error revealing file {filename}: {message}")
+                return jsonify({"error": message}), 404 if "not found" in message.lower() else 500
+
+        except Exception as e:
+            current_app.logger.error(f"Error in reveal_local_file for {filename}: {str(e)}")
+            return jsonify({"error": "Failed to reveal file", "details": str(e)}), 500
+
     return bp

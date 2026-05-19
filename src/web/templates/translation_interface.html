@@ -59,7 +59,8 @@
            visually merge with the active tab. The Glossaries tab swaps
            between list and editor cards, so both must be flat-topped. */
         #tab-translate > .main-card:first-child,
-        #tab-glossaries > .main-card {
+        #tab-glossaries > .main-card,
+        #tab-files > .main-card {
             border-top-left-radius: 0;
             border-top-right-radius: 0;
         }
@@ -231,6 +232,10 @@
             <button type="button" class="tab-btn" data-tab="glossaries" onclick="switchTopTab('glossaries')">
                 <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">menu_book</span>
                 Glossaries
+            </button>
+            <button type="button" class="tab-btn" data-tab="files" onclick="switchTopTab('files')">
+                <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">folder_open</span>
+                Files
             </button>
         </div>
 
@@ -690,6 +695,9 @@
                 <!-- Messages (connection status, notifications) -->
                 <div id="messages"></div>
 
+                <!-- Completion cards (one per finished file, cleared when a new translation starts) -->
+                <div id="completionCardsContainer"></div>
+
                 <!-- Progress Section -->
                 <div id="progressSection" class="progress-section hidden">
                     <h3 id="currentFileProgressTitle">
@@ -807,8 +815,13 @@
             </div>
         </div>
 
+        </div><!-- /#tab-translate -->
+
+        <!-- Tab: Files -->
+        <div id="tab-files" class="hidden">
+
         <!-- File Management Section -->
-        <div class="main-card" style="margin-top: 30px;">
+        <div class="main-card">
             <div class="card-header">
                 <span class="material-symbols-outlined">folder_open</span>
                 <h2>File Management</h2>
@@ -866,7 +879,7 @@
             </div>
         </div>
 
-        </div><!-- /#tab-translate -->
+        </div><!-- /#tab-files -->
 
         <!-- Tab: Glossaries -->
         <div id="tab-glossaries" class="hidden">

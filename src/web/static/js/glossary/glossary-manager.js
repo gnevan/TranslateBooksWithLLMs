@@ -192,9 +192,11 @@ function refreshBulkBar() {
 function switchTopTab(name) {
     const translateTab = $('tab-translate');
     const glossariesTab = $('tab-glossaries');
+    const filesTab = $('tab-files');
 
     if (translateTab) translateTab.classList.toggle('hidden', name !== 'translate');
     if (glossariesTab) glossariesTab.classList.toggle('hidden', name !== 'glossaries');
+    if (filesTab) filesTab.classList.toggle('hidden', name !== 'files');
 
     const buttons = document.querySelectorAll('#topTabNav .tab-btn');
     buttons.forEach((btn) => {
@@ -204,6 +206,8 @@ function switchTopTab(name) {
 
     if (name === 'glossaries') {
         loadList();
+    } else if (name === 'files' && typeof window.refreshFileList === 'function') {
+        window.refreshFileList();
     }
 }
 

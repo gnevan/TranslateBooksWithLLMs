@@ -206,6 +206,7 @@ export const BatchController = {
         }
 
         StateManager.setState('translation.isBatchActive', true);
+        TranslationTracker.clearCompletionCards();
 
         const queuedFilesCount = filesToProcess.filter(f => f.status === 'Queued').length;
 

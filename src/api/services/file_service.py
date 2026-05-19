@@ -212,3 +212,41 @@ class FileService:
 
         except Exception as e:
             return False, f"Failed to open file: {str(e)}", abs_path
+
+    def reveal_file(self, filename: str) -> tuple[bool, str, Optional[str]]:
+        """
+        Reveal a file in the system's file explorer (selecting the file when possible)
+
+        Args:
+            filename: Name of the file to reveal
+
+        Returns:
+            Tuple of (success, message, absolute_path)
+        """
+        import subprocess
+        import platform
+
+        file_path = self.find_file(filename)
+        if not file_path:
+            return False, "File not found", None
+
+        abs_path = str(file_path.resolve())
+        parent_dir = str(file_path.parent.resolve())
+        system = platform.system()
+
+        try:
+            if system == 'Windows':
+                # /select, and the path must be passed as two separate arguments,
+                # otherwise subprocess quotes them together and Explorer falls back
+                # to opening the user's default folder.
+                # Explorer returns exit code 1 even on success, so we don't check it.
+                subprocess.Popen(['explorer', '/select,', abs_path], close_fds=True)
+            elif system == 'Darwin':  # macOS
+                subprocess.run(['open', '-R', abs_path], check=True)
+            else:  # Linux and others — most file managers don't support file selection
+                subprocess.run(['xdg-open', parent_dir], check=True)
+
+            return True, f"Revealed file: {filename}", abs_path
+
+        except Exception as e:
+            return False, f"Failed to reveal file: {str(e)}", abs_path

@@ -226,6 +226,17 @@ export const ApiClient = {
     },
 
     /**
+     * Reveal a local file in the system's file explorer
+     * @param {string} filename - Filename to reveal
+     * @returns {Promise<Object>} Reveal result
+     */
+    async revealLocalFile(filename) {
+        return await apiRequest(`/api/files/${encodeURIComponent(filename)}/reveal`, {
+            method: 'POST'
+        });
+    },
+
+    /**
      * Clear uploaded files
      * @param {string[]} filePaths - Array of file paths to delete
      * @returns {Promise<Object>} Clear result

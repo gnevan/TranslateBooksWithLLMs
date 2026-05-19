@@ -397,6 +397,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         final_status_payload = {
             'result': state_manager.get_translation_field(translation_id, 'result'),
             'output_filename': config['output_filename'],
+            'output_dir': os.path.dirname(os.path.abspath(output_filepath_on_server)),
             'file_type': config['file_type']
         }
 

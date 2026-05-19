@@ -413,6 +413,19 @@ export const FileManager = {
         } catch (error) {
             MessageLogger.showMessage(`Error opening file: ${error.message}`, 'error');
         }
+    },
+
+    /**
+     * Reveal file in the system file explorer (Explorer/Finder/etc.)
+     * @param {string} filename - Filename to reveal
+     */
+    async revealLocalFile(filename) {
+        try {
+            await ApiClient.revealLocalFile(filename);
+            MessageLogger.addLog(`📁 Revealed in folder: ${filename}`);
+        } catch (error) {
+            MessageLogger.showMessage(`Error revealing file: ${error.message}`, 'error');
+        }
     }
 };
 
@@ -421,3 +434,4 @@ window.toggleFileSelection = (filename) => FileManager.toggleFileSelection(filen
 window.downloadSingleFile = (filename) => FileManager.downloadSingleFile(filename);
 window.deleteSingleFile = (filename) => FileManager.deleteSingleFile(filename);
 window.openLocalFile = (filename) => FileManager.openLocalFile(filename);
+window.revealLocalFile = (filename) => FileManager.revealLocalFile(filename);

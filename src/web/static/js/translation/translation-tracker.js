@@ -712,6 +712,10 @@ export const TranslationTracker = {
             resultData.status === 'rate_limited' ? 'Rate Limited' : 'Error'
         );
 
+        if (resultData.status === 'completed') {
+            this.renderCompletionCard(currentFile, resultData);
+        }
+
         StateManager.setState('translation.currentJob', null);
 
         if (resultData.status === 'completed') {
@@ -725,6 +729,84 @@ export const TranslationTracker = {
         } else {
             this.processNextFileInQueue();
         }
+    },
+
+    /**
+     * Render a persistent success card for a completed file, with quick actions
+     * to locate it on disk.
+     * @param {Object} file - The file that just finished
+     * @param {Object} resultData - Final payload from the server (output_filename, output_dir)
+     */
+    renderCompletionCard(file, resultData) {
+        const container = DomHelpers.getElement('completionCardsContainer');
+        if (!container) return;
+
+        const outputFilename = resultData.output_filename || file.outputFilename || file.name;
+        const outputDir = resultData.output_dir || '';
+
+        const card = document.createElement('div');
+        card.className = 'completion-card';
+
+        const safeFilename = DomHelpers.escapeHtml(outputFilename);
+        const safeDir = DomHelpers.escapeHtml(outputDir);
+        const filenameAttr = encodeURIComponent(outputFilename);
+
+        const pathLine = outputDir
+            ? `<div class="completion-card__path">Saved to <code>${safeDir}</code></div>`
+            : '';
+
+        card.innerHTML = `
+            <div class="completion-card__header">
+                <h3 class="completion-card__title">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    Translation completed
+                </h3>
+                <button type="button" class="completion-card__close" title="Dismiss" aria-label="Dismiss">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="completion-card__filename">${safeFilename}</div>
+            ${pathLine}
+            <div class="completion-card__actions">
+                <a class="btn btn-primary" href="/api/files/${filenameAttr}" download>
+                    <span class="material-symbols-outlined">download</span>
+                    Download
+                </a>
+                <button type="button" class="btn btn-secondary" data-action="open">
+                    <span class="material-symbols-outlined">open_in_new</span>
+                    Open file
+                </button>
+                <button type="button" class="btn btn-secondary" data-action="reveal">
+                    <span class="material-symbols-outlined">folder_open</span>
+                    Reveal in folder
+                </button>
+                <button type="button" class="btn btn-secondary" data-action="files-tab">
+                    <span class="material-symbols-outlined">folder</span>
+                    Go to Files tab
+                </button>
+            </div>
+        `;
+
+        card.querySelector('.completion-card__close').addEventListener('click', () => card.remove());
+        card.querySelector('[data-action="open"]').addEventListener('click', () => {
+            if (typeof window.openLocalFile === 'function') window.openLocalFile(outputFilename);
+        });
+        card.querySelector('[data-action="reveal"]').addEventListener('click', () => {
+            if (typeof window.revealLocalFile === 'function') window.revealLocalFile(outputFilename);
+        });
+        card.querySelector('[data-action="files-tab"]').addEventListener('click', () => {
+            if (typeof window.switchTopTab === 'function') window.switchTopTab('files');
+        });
+
+        container.appendChild(card);
+    },
+
+    /**
+     * Remove all completion cards (called when a new batch starts).
+     */
+    clearCompletionCards() {
+        const container = DomHelpers.getElement('completionCardsContainer');
+        if (container) container.innerHTML = '';
     },
 
     /**
