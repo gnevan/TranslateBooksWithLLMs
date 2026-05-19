@@ -11,7 +11,8 @@ import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { StatusManager } from '../utils/status-manager.js';
 import { FileUpload } from '../files/file-upload.js';
-import { ProgressManager } from './progress-manager.js';
+import { FileActions } from '../files/file-actions.js';
+import { ProgressManager, formatElapsedTime } from './progress-manager.js';
 import { LifecycleManager } from '../utils/lifecycle-manager.js';
 
 // Storage configuration with versioning
@@ -742,63 +743,108 @@ export const TranslationTracker = {
         if (!container) return;
 
         const outputFilename = resultData.output_filename || file.outputFilename || file.name;
-        const outputDir = resultData.output_dir || '';
+        const safeFilename = DomHelpers.escapeHtml(outputFilename);
+        const statsHtml = this._buildCompletionStatsHtml(file, resultData);
 
         const card = document.createElement('div');
         card.className = 'completion-card';
 
-        const safeFilename = DomHelpers.escapeHtml(outputFilename);
-        const safeDir = DomHelpers.escapeHtml(outputDir);
-        const filenameAttr = encodeURIComponent(outputFilename);
+        const topRow = document.createElement('div');
+        topRow.className = 'completion-card__top';
+        topRow.appendChild(this._buildCompletionThumb(file));
 
-        const pathLine = outputDir
-            ? `<div class="completion-card__path">Saved to <code>${safeDir}</code></div>`
-            : '';
-
-        card.innerHTML = `
+        const main = document.createElement('div');
+        main.className = 'completion-card__main';
+        main.innerHTML = `
             <div class="completion-card__header">
                 <h3 class="completion-card__title">
                     <span class="material-symbols-outlined">check_circle</span>
-                    Translation completed
+                    <span>Translation completed${statsHtml}</span>
                 </h3>
                 <button type="button" class="completion-card__close" title="Dismiss" aria-label="Dismiss">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
-            <div class="completion-card__filename">${safeFilename}</div>
-            ${pathLine}
-            <div class="completion-card__actions">
-                <a class="btn btn-primary" href="/api/files/${filenameAttr}" download>
-                    <span class="material-symbols-outlined">download</span>
-                    Download
-                </a>
-                <button type="button" class="btn btn-secondary" data-action="open">
-                    <span class="material-symbols-outlined">open_in_new</span>
-                    Open file
-                </button>
-                <button type="button" class="btn btn-secondary" data-action="reveal">
-                    <span class="material-symbols-outlined">folder_open</span>
-                    Reveal in folder
-                </button>
-                <button type="button" class="btn btn-secondary" data-action="files-tab">
-                    <span class="material-symbols-outlined">folder</span>
-                    Go to Files tab
-                </button>
-            </div>
+            <div class="completion-card__filename" title="${safeFilename}">${safeFilename}</div>
         `;
+        topRow.appendChild(main);
+        card.appendChild(topRow);
+
+        const actionsGroup = FileActions.createActionGroup({
+            actions: ['download', 'open', 'reveal', 'files-tab'],
+            filename: outputFilename,
+            variant: 'labeled'
+        });
+        actionsGroup.classList.add('completion-card__actions');
+        card.appendChild(actionsGroup);
 
         card.querySelector('.completion-card__close').addEventListener('click', () => card.remove());
-        card.querySelector('[data-action="open"]').addEventListener('click', () => {
-            if (typeof window.openLocalFile === 'function') window.openLocalFile(outputFilename);
-        });
-        card.querySelector('[data-action="reveal"]').addEventListener('click', () => {
-            if (typeof window.revealLocalFile === 'function') window.revealLocalFile(outputFilename);
-        });
-        card.querySelector('[data-action="files-tab"]').addEventListener('click', () => {
-            if (typeof window.switchTopTab === 'function') window.switchTopTab('files');
-        });
 
         container.appendChild(card);
+
+        DomHelpers.hide('progressSection');
+    },
+
+    /**
+     * Build the thumbnail element for the completion card.
+     * Uses the book cover for EPUBs (with SVG fallback), generic icon otherwise.
+     * @param {Object} file - File object (fileType, thumbnail)
+     * @returns {HTMLElement} Thumb wrapper element
+     */
+    _buildCompletionThumb(file) {
+        const wrap = document.createElement('div');
+        wrap.className = 'completion-card__thumb';
+
+        if (file.fileType === 'epub' && file.thumbnail) {
+            const img = document.createElement('img');
+            img.src = `/api/thumbnails/${encodeURIComponent(file.thumbnail)}`;
+            img.alt = 'Cover';
+            img.onerror = () => {
+                wrap.innerHTML = this._createGenericEPUBIcon();
+            };
+            wrap.appendChild(img);
+        } else {
+            wrap.innerHTML = this._getFileIcon(file.fileType);
+        }
+
+        return wrap;
+    },
+
+    /**
+     * Build the stats block HTML for the completion card.
+     * @param {Object} file - File object (for fileType)
+     * @param {Object} resultData - Final payload (contains stats)
+     * @returns {string} HTML for the stats block (empty string if no stats)
+     */
+    _buildCompletionStatsHtml(file, resultData) {
+        const stats = resultData.stats || {};
+        const isSrt = file.fileType === 'srt';
+
+        const failed = isSrt ? (stats.failed_subtitles || 0) : (stats.failed_chunks || 0);
+        const elapsed = stats.elapsed_time;
+
+        const cost = stats.openrouter_cost || 0;
+        const promptTokens = stats.openrouter_prompt_tokens || 0;
+        const completionTokens = stats.openrouter_completion_tokens || 0;
+        const totalTokens = promptTokens + completionTokens;
+
+        const items = [];
+
+        if (typeof elapsed === 'number' && elapsed > 0) {
+            items.push(formatElapsedTime(elapsed));
+        }
+
+        if (failed > 0) {
+            items.push(`<span class="completion-card__stat--error">${failed} failed</span>`);
+        }
+
+        if (cost > 0 || totalTokens > 0) {
+            items.push(`$${cost.toFixed(4)} · ${totalTokens.toLocaleString()} tokens`);
+        }
+
+        if (items.length === 0) return '';
+
+        return `<span class="completion-card__stats"> - ${items.join(' · ')}</span>`;
     },
 
     /**

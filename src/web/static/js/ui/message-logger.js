@@ -79,14 +79,23 @@ export const MessageLogger = {
     summaryBuffer: [],
     summaryTimeout: null,
 
+    _autoHideTimer: null,
+    _autoHideToken: 0,
+
     /**
      * Show a user message
      * @param {string} text - Message text
      * @param {string} type - Message type ('success', 'error', 'info', 'warning')
+     * @param {number} [autoHideMs] - If > 0, clear the message after this many ms
      */
-    showMessage(text, type = 'info') {
+    showMessage(text, type = 'info', autoHideMs = 0) {
         const messagesDiv = DomHelpers.getElement('messages');
         if (!messagesDiv) return;
+
+        if (this._autoHideTimer) {
+            clearTimeout(this._autoHideTimer);
+            this._autoHideTimer = null;
+        }
 
         if (!text) {
             DomHelpers.setHtml(messagesDiv, '');
@@ -95,6 +104,15 @@ export const MessageLogger = {
 
         const messageHtml = `<div class="message ${type}">${DomHelpers.escapeHtml(text)}</div>`;
         DomHelpers.setHtml(messagesDiv, messageHtml);
+
+        if (autoHideMs > 0) {
+            const token = ++this._autoHideToken;
+            this._autoHideTimer = setTimeout(() => {
+                if (token !== this._autoHideToken) return;
+                DomHelpers.setHtml(messagesDiv, '');
+                this._autoHideTimer = null;
+            }, autoHideMs);
+        }
     },
 
     /**

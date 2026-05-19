@@ -59,6 +59,7 @@
            visually merge with the active tab. The Glossaries tab swaps
            between list and editor cards, so both must be flat-topped. */
         #tab-translate > .main-card:first-child,
+        #tab-settings > .main-card,
         #tab-glossaries > .main-card,
         #tab-files > .main-card {
             border-top-left-radius: 0;
@@ -229,6 +230,10 @@
                 <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">translate</span>
                 Translate
             </button>
+            <button type="button" class="tab-btn" data-tab="settings" onclick="switchTopTab('settings')">
+                <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">tune</span>
+                Settings
+            </button>
             <button type="button" class="tab-btn" data-tab="glossaries" onclick="switchTopTab('glossaries')">
                 <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">menu_book</span>
                 Glossaries
@@ -396,6 +401,156 @@
                     <input type="file" id="fileInput" accept=".txt,.epub,.srt,.docx" style="display: none;" onchange="handleFileSelect(event)" multiple>
                 </div>
 
+                <!-- File Info Section (Batch Files) -->
+                <div id="fileInfo" class="hidden" style="margin-bottom: 20px; margin-top: 20px;">
+                    <h4 style="color: var(--text-dark); font-weight: 700; margin-bottom: 1rem;">Selected Files:</h4>
+                    <ul id="fileListContainer"></ul>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="text-align: center; margin-top: 30px; display: flex; justify-content: center; gap: 15px;">
+                    <button class="btn btn-primary" id="translateBtn" onclick="startBatchTranslation()" disabled>
+                        <span class="material-symbols-outlined">play_circle</span>
+                        Start Translation Batch
+                    </button>
+                    <button class="btn btn-danger hidden" id="interruptBtn" onclick="interruptCurrentTranslation()">
+                        <span class="material-symbols-outlined">stop_circle</span>
+                        Interrupt Current & Stop Batch
+                    </button>
+                </div>
+
+                <!-- Settings Summary (concise overview of LLM + active options) -->
+                <div id="settingsSummary" style="margin-top: 12px; text-align: center; font-size: 0.8125rem; color: var(--text-muted-light); line-height: 1.5;"></div>
+
+                <!-- Messages (connection status, notifications) -->
+                <div id="messages"></div>
+
+                <!-- Completion cards (one per finished file, cleared when a new translation starts) -->
+                <div id="completionCardsContainer"></div>
+
+                <!-- Progress Section -->
+                <div id="progressSection" class="progress-section hidden">
+                    <h3 id="currentFileProgressTitle">
+                        <span class="material-symbols-outlined">monitoring</span>
+                        Translation Progress
+                    </h3>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar" style="width: 0%">0%</div>
+                    </div>
+                    <div class="stats-grid" id="statsGrid">
+                        <div class="stat-card">
+                            <h3 id="totalChunks">0</h3>
+                            <p>Total Chunks</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="completedChunks">0</h3>
+                            <p>Completed</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="failedChunks">0</h3>
+                            <p>Failed</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="elapsedTime">0s</h3>
+                            <p>Time Elapsed</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="estimatedTimeRemaining">--</h3>
+                            <p>Est. Remaining</p>
+                        </div>
+                    </div>
+
+                    <!-- OpenRouter Cost Display -->
+                    <div class="stats-grid hidden" id="openrouterCostGrid" style="margin-top: 15px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b;">
+                            <h3 id="openrouterCost" style="color: #92400e;">$0.0000</h3>
+                            <p style="color: #78350f;">Total Cost (USD)</p>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border: 1px solid #3b82f6;">
+                            <h3 id="openrouterTokens" style="color: #1e40af;">0</h3>
+                            <p style="color: #1e3a8a;">Total Tokens</p>
+                        </div>
+                    </div>
+
+                    <!-- Last Translation Preview -->
+                    <div id="lastTranslationPreviewSection" style="margin-top: 20px; display: block !important;">
+                        <h4 style="margin: 0 0 10px 0; color: var(--text-dark); font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                            <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.25rem;">description</span>
+                            Last Translation Preview
+                            <span id="previewLanguages" style="font-weight: 400; font-size: 0.85rem; color: var(--text-muted-light); margin-left: 0.5rem;"></span>
+                        </h4>
+                        <div class="log-container" id="lastTranslationPreview">
+                            <div style="color: var(--text-muted-light); font-style: italic; padding: 10px;">No translation yet...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TTS Progress Section -->
+                <div id="ttsProgressSection" style="display: none; margin-top: 20px; padding: 15px; background: var(--success-light-bg); border: 1px solid var(--success-light); border-radius: 1.5rem;">
+                    <h3 style="margin: 0 0 10px 0; color: var(--success-light); display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="material-symbols-outlined">volume_up</span>
+                        Audio Generation
+                    </h3>
+                    <div class="progress-bar-container" style="margin-bottom: 10px;">
+                        <div class="progress-bar" id="ttsProgressBar" style="width: 0%; background: linear-gradient(90deg, var(--success-light), #22c55e);">0%</div>
+                    </div>
+                    <p id="ttsStatusText" style="margin: 0; font-size: 0.875rem; color: var(--success-light);">Waiting to start...</p>
+                </div>
+
+                <!-- Activity Log (Collapsible) -->
+                <div class="prompt-options-toggle" onclick="toggleActivityLog()" style="margin-top: 30px;">
+                    <span style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span class="material-symbols-outlined">terminal</span>
+                        <span>Activity Log</span>
+                    </span>
+                    <span id="activityLogIcon" class="material-symbols-outlined">expand_more</span>
+                </div>
+
+                <div id="activityLogSection" class="hidden">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                        <button class="btn btn-secondary" onclick="clearActivityLog()" style="font-size: 0.75rem; padding: 0.5rem 1rem;">
+                            <span class="material-symbols-outlined" style="font-size: 1rem;">delete</span>
+                            Clear Log
+                        </button>
+                    </div>
+                    <div class="log-container" id="logContainer"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resumable Jobs Section -->
+        <div class="main-card" id="resumableJobsSection" style="margin-top: 30px; display: none;">
+            <div class="card-header">
+                <span class="material-symbols-outlined">pause_circle</span>
+                <h2>Paused Translations</h2>
+                <button class="btn btn-secondary" onclick="loadResumableJobs()" title="Refresh list" style="margin-left: auto; padding: 0.5rem 1rem;">
+                    <span class="material-symbols-outlined">refresh</span>
+                </button>
+            </div>
+
+            <div class="card-body">
+                <div id="resumableJobsContainer">
+                    <div id="resumableJobsLoading" style="text-align: center; padding: 20px;">
+                        <p>Loading...</p>
+                    </div>
+
+                    <div id="resumableJobsList" style="display: none;">
+                        <!-- Jobs will be inserted here -->
+                    </div>
+
+                    <div id="resumableJobsEmpty" style="text-align: center; padding: 40px; display: none;">
+                        <p style="color: var(--text-muted-light);">No paused translations</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        </div><!-- /#tab-translate -->
+
+        <!-- Tab: Settings -->
+        <div id="tab-settings" class="hidden">
+        <div class="main-card">
+            <div class="card-body">
                 <!-- Settings (Collapsible) -->
                 <div class="prompt-options-toggle" onclick="toggleSettingsOptions()">
                     <span style="display: flex; align-items: center; gap: 0.75rem;">
@@ -554,11 +709,11 @@
                     </div>
                 </div>
 
-                <!-- Options (Collapsible) -->
+                <!-- Translation Options (Collapsible) -->
                 <div class="prompt-options-toggle" onclick="togglePromptOptions()">
                     <span style="display: flex; align-items: center; gap: 0.75rem;">
                         <span class="material-symbols-outlined">edit_note</span>
-                        <span>Options</span>
+                        <span>Translation Options</span>
                     </span>
                     <span id="promptOptionsIcon" class="material-symbols-outlined">expand_more</span>
                 </div>
@@ -673,149 +828,9 @@
                         </p>
                     </div>
                 </div>
-
-                <!-- File Info Section (Batch Files) -->
-                <div id="fileInfo" class="hidden" style="margin-bottom: 20px; margin-top: 20px;">
-                    <h4 style="color: var(--text-dark); font-weight: 700; margin-bottom: 1rem;">Selected Files:</h4>
-                    <ul id="fileListContainer"></ul>
-                </div>
-
-                <!-- Action Buttons -->
-                <div style="text-align: center; margin-top: 30px; display: flex; justify-content: center; gap: 15px;">
-                    <button class="btn btn-primary" id="translateBtn" onclick="startBatchTranslation()" disabled>
-                        <span class="material-symbols-outlined">play_circle</span>
-                        Start Translation Batch
-                    </button>
-                    <button class="btn btn-danger hidden" id="interruptBtn" onclick="interruptCurrentTranslation()">
-                        <span class="material-symbols-outlined">stop_circle</span>
-                        Interrupt Current & Stop Batch
-                    </button>
-                </div>
-
-                <!-- Messages (connection status, notifications) -->
-                <div id="messages"></div>
-
-                <!-- Completion cards (one per finished file, cleared when a new translation starts) -->
-                <div id="completionCardsContainer"></div>
-
-                <!-- Progress Section -->
-                <div id="progressSection" class="progress-section hidden">
-                    <h3 id="currentFileProgressTitle">
-                        <span class="material-symbols-outlined">monitoring</span>
-                        Translation Progress
-                    </h3>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" id="progressBar" style="width: 0%">0%</div>
-                    </div>
-                    <div class="stats-grid" id="statsGrid">
-                        <div class="stat-card">
-                            <h3 id="totalChunks">0</h3>
-                            <p>Total Chunks</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 id="completedChunks">0</h3>
-                            <p>Completed</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 id="failedChunks">0</h3>
-                            <p>Failed</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 id="elapsedTime">0s</h3>
-                            <p>Time Elapsed</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3 id="estimatedTimeRemaining">--</h3>
-                            <p>Est. Remaining</p>
-                        </div>
-                    </div>
-
-                    <!-- OpenRouter Cost Display -->
-                    <div class="stats-grid hidden" id="openrouterCostGrid" style="margin-top: 15px;">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b;">
-                            <h3 id="openrouterCost" style="color: #92400e;">$0.0000</h3>
-                            <p style="color: #78350f;">Total Cost (USD)</p>
-                        </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border: 1px solid #3b82f6;">
-                            <h3 id="openrouterTokens" style="color: #1e40af;">0</h3>
-                            <p style="color: #1e3a8a;">Total Tokens</p>
-                        </div>
-                    </div>
-
-                    <!-- Last Translation Preview -->
-                    <div id="lastTranslationPreviewSection" style="margin-top: 20px; display: block !important;">
-                        <h4 style="margin: 0 0 10px 0; color: var(--text-dark); font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.25rem;">description</span>
-                            Last Translation Preview
-                            <span id="previewLanguages" style="font-weight: 400; font-size: 0.85rem; color: var(--text-muted-light); margin-left: 0.5rem;"></span>
-                        </h4>
-                        <div class="log-container" id="lastTranslationPreview">
-                            <div style="color: var(--text-muted-light); font-style: italic; padding: 10px;">No translation yet...</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TTS Progress Section -->
-                <div id="ttsProgressSection" style="display: none; margin-top: 20px; padding: 15px; background: var(--success-light-bg); border: 1px solid var(--success-light); border-radius: 1.5rem;">
-                    <h3 style="margin: 0 0 10px 0; color: var(--success-light); display: flex; align-items: center; gap: 0.5rem;">
-                        <span class="material-symbols-outlined">volume_up</span>
-                        Audio Generation
-                    </h3>
-                    <div class="progress-bar-container" style="margin-bottom: 10px;">
-                        <div class="progress-bar" id="ttsProgressBar" style="width: 0%; background: linear-gradient(90deg, var(--success-light), #22c55e);">0%</div>
-                    </div>
-                    <p id="ttsStatusText" style="margin: 0; font-size: 0.875rem; color: var(--success-light);">Waiting to start...</p>
-                </div>
-
-                <!-- Activity Log (Collapsible) -->
-                <div class="prompt-options-toggle" onclick="toggleActivityLog()" style="margin-top: 30px;">
-                    <span style="display: flex; align-items: center; gap: 0.75rem;">
-                        <span class="material-symbols-outlined">terminal</span>
-                        <span>Activity Log</span>
-                    </span>
-                    <span id="activityLogIcon" class="material-symbols-outlined">expand_more</span>
-                </div>
-
-                <div id="activityLogSection" class="hidden">
-                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-                        <button class="btn btn-secondary" onclick="clearActivityLog()" style="font-size: 0.75rem; padding: 0.5rem 1rem;">
-                            <span class="material-symbols-outlined" style="font-size: 1rem;">delete</span>
-                            Clear Log
-                        </button>
-                    </div>
-                    <div class="log-container" id="logContainer"></div>
-                </div>
             </div>
         </div>
-
-        <!-- Resumable Jobs Section -->
-        <div class="main-card" id="resumableJobsSection" style="margin-top: 30px; display: none;">
-            <div class="card-header">
-                <span class="material-symbols-outlined">pause_circle</span>
-                <h2>Paused Translations</h2>
-                <button class="btn btn-secondary" onclick="loadResumableJobs()" title="Refresh list" style="margin-left: auto; padding: 0.5rem 1rem;">
-                    <span class="material-symbols-outlined">refresh</span>
-                </button>
-            </div>
-
-            <div class="card-body">
-                <div id="resumableJobsContainer">
-                    <div id="resumableJobsLoading" style="text-align: center; padding: 20px;">
-                        <p>Loading...</p>
-                    </div>
-
-                    <div id="resumableJobsList" style="display: none;">
-                        <!-- Jobs will be inserted here -->
-                    </div>
-
-                    <div id="resumableJobsEmpty" style="text-align: center; padding: 40px; display: none;">
-                        <p style="color: var(--text-muted-light);">No paused translations</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        </div><!-- /#tab-translate -->
+        </div><!-- /#tab-settings -->
 
         <!-- Tab: Files -->
         <div id="tab-files" class="hidden">
@@ -825,9 +840,15 @@
             <div class="card-header">
                 <span class="material-symbols-outlined">folder_open</span>
                 <h2>File Management</h2>
-                <button class="btn btn-secondary" onclick="refreshFileList()" title="Refresh file list" style="margin-left: auto; padding: 0.5rem 1rem;">
-                    <span class="material-symbols-outlined">refresh</span>
-                </button>
+                <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary" onclick="openOutputFolder()" title="Open translations folder" style="padding: 0.5rem 1rem;">
+                        <span class="material-symbols-outlined">folder_open</span>
+                        Open folder
+                    </button>
+                    <button class="btn btn-secondary" onclick="refreshFileList()" title="Refresh file list" style="padding: 0.5rem 1rem;">
+                        <span class="material-symbols-outlined">refresh</span>
+                    </button>
+                </div>
             </div>
 
             <div class="card-body">
@@ -895,12 +916,10 @@
                     </button>
                 </div>
                 <div class="card-body">
-                    <div style="margin-bottom: 15px;">
-                        <p style="color: var(--text-muted-light); font-size: 0.9rem; margin: 0;">
-                            Glossaries are reusable across translation jobs. Pick one on the Translate tab to inject it into every chunk's system prompt.
-                        </p>
-                    </div>
-                    <div id="glossaryListContainer">
+                    <p style="color: var(--text-muted-light); font-size: 0.9rem; margin: 0 0 15px; line-height: 1.5;">
+                        Tired of seeing the same character's name translated three different ways? A glossary gives the model a <strong>fixed mapping</strong> for any term you want to control: <strong>names, places, domain vocabulary, or stylistic choices</strong>. <strong>Reusable across jobs</strong>. <strong>Assign</strong> one below (or via <em>Settings → Translation Options</em>) to inject it into every chunk's prompt.
+                    </p>
+                    <div id="glossaryListContainer" class="neu-inset-light" style="padding: 12px; background: var(--background-light);">
                         <div id="glossaryListLoading" style="text-align: center; padding: 20px;">Loading...</div>
                         <div id="glossaryListEmpty" class="hidden" style="padding: 40px 20px;">
                             <div class="glossary-empty-cta">

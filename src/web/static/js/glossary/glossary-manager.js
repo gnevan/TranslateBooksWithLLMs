@@ -191,10 +191,12 @@ function refreshBulkBar() {
 
 function switchTopTab(name) {
     const translateTab = $('tab-translate');
+    const settingsTab = $('tab-settings');
     const glossariesTab = $('tab-glossaries');
     const filesTab = $('tab-files');
 
     if (translateTab) translateTab.classList.toggle('hidden', name !== 'translate');
+    if (settingsTab) settingsTab.classList.toggle('hidden', name !== 'settings');
     if (glossariesTab) glossariesTab.classList.toggle('hidden', name !== 'glossaries');
     if (filesTab) filesTab.classList.toggle('hidden', name !== 'files');
 
@@ -253,6 +255,7 @@ async function refreshDropdown() {
     const stillExists = glossaries.some((g) => String(g.id) === previous);
     select.value = stillExists ? previous : '';
     refreshGlossaryInfoCard();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function _normalizeLang(s) {
@@ -364,9 +367,11 @@ async function loadList() {
 
     if (!body) return;
     body.innerHTML = '';
+    const assignedId = localStorage.getItem(STORAGE_KEY) || '';
     for (const g of glossaries) {
         const tr = document.createElement('tr');
         tr.dataset.glossaryId = String(g.id);
+        const isAssigned = String(g.id) === assignedId;
 
         const tdName = document.createElement('td');
         const link = document.createElement('a');
@@ -397,6 +402,42 @@ async function loadList() {
         actionsWrapper.style.gap = '0.25rem';
         actionsWrapper.style.alignItems = 'center';
         actionsWrapper.style.justifyContent = 'flex-end';
+
+        const assignBtn = document.createElement('button');
+        assignBtn.className = 'file-action-btn download';
+        assignBtn.title = isAssigned ? 'Currently assigned to translation — click to unassign' : 'Assign to translation';
+        assignBtn.setAttribute('aria-label', assignBtn.title);
+        const assignIcon = isAssigned ? 'bookmark_added' : 'bookmark_add';
+        assignBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 0.875rem;">${assignIcon}</span>`;
+        if (isAssigned) {
+            assignBtn.style.color = '#10b981';
+        }
+        assignBtn.addEventListener('click', async () => {
+            const select = $('glossarySelect');
+            if (isAssigned) {
+                localStorage.setItem(STORAGE_KEY, '');
+                if (select) {
+                    select.value = '';
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                toast.success(`"${g.name}" unassigned from translation.`);
+            } else {
+                localStorage.setItem(STORAGE_KEY, String(g.id));
+                if (select) {
+                    const exists = Array.from(select.options).some((o) => o.value === String(g.id));
+                    if (exists) {
+                        select.value = String(g.id);
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                    } else {
+                        await refreshDropdown();
+                    }
+                } else {
+                    await refreshDropdown();
+                }
+                toast.success(`"${g.name}" assigned to translation.`);
+            }
+            await loadList();
+        });
 
         const editBtn = document.createElement('button');
         editBtn.className = 'file-action-btn download';
@@ -440,6 +481,7 @@ async function loadList() {
             }
         });
 
+        actionsWrapper.appendChild(assignBtn);
         actionsWrapper.appendChild(editBtn);
         actionsWrapper.appendChild(dupBtn);
         actionsWrapper.appendChild(delBtn);

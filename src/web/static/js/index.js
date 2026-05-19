@@ -19,6 +19,7 @@ import { SettingsManager } from './core/settings-manager.js';
 import { DomHelpers } from './ui/dom-helpers.js';
 import { MessageLogger } from './ui/message-logger.js';
 import { FormManager } from './ui/form-manager.js';
+import { SettingsSummary } from './ui/settings-summary.js';
 import { GlossaryManager } from './glossary/glossary-manager.js';
 
 // ========================================
@@ -33,6 +34,7 @@ import { CostEstimator } from './providers/cost-estimator.js';
 // ========================================
 import { FileUpload } from './files/file-upload.js';
 import { FileManager } from './files/file-manager.js';
+import { FileActions } from './files/file-actions.js';
 
 // ========================================
 // Translation Modules
@@ -393,6 +395,7 @@ async function initializeModules() {
     initializeThemeManager();
     SettingsManager.initialize();
     FormManager.initialize();
+    SettingsSummary.initialize();
     GlossaryManager.initialize();
     StatusManager.initialize();
     initializePreviewHeight();
@@ -508,9 +511,10 @@ window.refreshFileList = FileManager.refreshFileList.bind(FileManager);
 window.downloadSelectedFiles = FileManager.downloadSelectedFiles.bind(FileManager);
 window.deleteSelectedFiles = FileManager.deleteSelectedFiles.bind(FileManager);
 window.toggleSelectAll = FileManager.toggleSelectAll.bind(FileManager);
+window.openOutputFolder = () => FileActions.openOutputFolder();
 
-// File manager functions (exposed in file-manager.js)
-// window.toggleFileSelection, downloadSingleFile, deleteSingleFile, openLocalFile
+// File manager functions (exposed in file-manager.js / file-actions.js)
+// window.toggleFileSelection, deleteSingleFile, openLocalFile, revealLocalFile, downloadSingleFile
 
 // TTS Manager functions
 window.refreshTTSProviders = TTSManager.loadProvidersInfo.bind(TTSManager);

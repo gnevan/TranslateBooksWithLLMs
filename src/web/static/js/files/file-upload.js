@@ -748,7 +748,7 @@ export const FileUpload = {
         const outputFilename = generateOutputFilename(file, outputPattern);
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
-        MessageLogger.showMessage(`Uploading file: ${file.name}...`, 'info');
+        MessageLogger.showMessage(`Uploading file: ${file.name}...`, 'info', 4000);
 
         try {
             // Upload file using ApiClient

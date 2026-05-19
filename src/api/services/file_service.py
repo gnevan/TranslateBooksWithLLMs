@@ -213,6 +213,38 @@ class FileService:
         except Exception as e:
             return False, f"Failed to open file: {str(e)}", abs_path
 
+    def open_output_folder(self) -> tuple[bool, str, Optional[str]]:
+        """
+        Open the output (translations) folder in the system's file explorer.
+
+        Returns:
+            Tuple of (success, message, absolute_path)
+        """
+        import subprocess
+        import platform
+
+        folder = self.output_dir.resolve()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return False, f"Failed to prepare output folder: {str(e)}", str(folder)
+
+        abs_path = str(folder)
+        system = platform.system()
+
+        try:
+            if system == 'Windows':
+                subprocess.Popen(['explorer', abs_path], close_fds=True)
+            elif system == 'Darwin':
+                subprocess.run(['open', abs_path], check=True)
+            else:
+                subprocess.run(['xdg-open', abs_path], check=True)
+
+            return True, f"Opened folder: {abs_path}", abs_path
+
+        except Exception as e:
+            return False, f"Failed to open folder: {str(e)}", abs_path
+
     def reveal_file(self, filename: str) -> tuple[bool, str, Optional[str]]:
         """
         Reveal a file in the system's file explorer (selecting the file when possible)

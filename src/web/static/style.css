@@ -1052,6 +1052,38 @@ input[type="checkbox"] {
     color: #8b5cf6;
 }
 
+.file-action-btn.reveal {
+    color: #f59e0b;
+}
+
+.file-action-btn.open {
+    color: var(--primary-light);
+}
+
+/* Action-button group containers (used by Files tab rows + completion card) */
+.file-action-group {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.file-action-group--compact {
+    gap: 0.125rem;
+}
+
+.file-action-group--labeled {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.file-row-actions {
+    width: 160px;
+    text-align: center;
+    white-space: nowrap;
+    padding: 0.5rem;
+}
+
 /* ========================================
    Messages
    ======================================== */
@@ -1408,7 +1440,44 @@ input[type="checkbox"] {
     box-shadow: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.85rem;
+    overflow: hidden;
+}
+
+.completion-card__top {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.completion-card__thumb {
+    flex: 0 0 auto;
+    width: 48px;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    line-height: 1;
+}
+
+.completion-card__thumb img,
+.completion-card__thumb svg {
+    width: 48px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    display: block;
+}
+
+.completion-card__main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
 }
 
 .completion-card__header {
@@ -1424,11 +1493,14 @@ input[type="checkbox"] {
     align-items: center;
     gap: 0.5rem;
     margin: 0;
+    font-size: 1rem;
+    min-width: 0;
 }
 
 .completion-card__title .material-symbols-outlined {
     color: var(--success-light);
     font-size: 1.5rem;
+    flex: 0 0 auto;
 }
 
 .completion-card__close {
@@ -1443,6 +1515,7 @@ input[type="checkbox"] {
     align-items: center;
     justify-content: center;
     transition: background 0.2s, color 0.2s;
+    flex: 0 0 auto;
 }
 
 .completion-card__close:hover {
@@ -1452,29 +1525,19 @@ input[type="checkbox"] {
 
 .completion-card__filename {
     font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 0.95rem;
+    font-size: 0.85rem;
     color: var(--text-dark);
-    word-break: break-all;
-}
-
-.completion-card__path {
-    font-size: 0.8125rem;
-    color: var(--text-muted-light);
-    word-break: break-all;
-}
-
-.completion-card__path code {
-    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    background: var(--background-outer);
-    padding: 0.1rem 0.4rem;
-    border-radius: 0.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }
 
 .completion-card__actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-top: 0.25rem;
+    margin-top: 0.1rem;
 }
 
 .completion-card__actions .btn {
@@ -1484,6 +1547,17 @@ input[type="checkbox"] {
 
 .completion-card__actions .btn .material-symbols-outlined {
     font-size: 1.1rem;
+}
+
+.completion-card__stats {
+    font-weight: 400;
+    font-size: 0.85rem;
+    color: var(--text-muted-light);
+    font-variant-numeric: tabular-nums;
+}
+
+.completion-card__stat--error {
+    color: #dc2626;
 }
 
 /* ========================================

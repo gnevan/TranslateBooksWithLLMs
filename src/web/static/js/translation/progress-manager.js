@@ -21,7 +21,7 @@ const MAX_SAMPLES = 10; // Number of recent chunks to average for ETA
  * @param {number} seconds - Elapsed time in seconds
  * @returns {string} Formatted time string
  */
-function formatElapsedTime(seconds) {
+export function formatElapsedTime(seconds) {
     if (seconds < 60) {
         return seconds.toFixed(1) + 's';
     }

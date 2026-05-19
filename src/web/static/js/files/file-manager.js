@@ -9,6 +9,7 @@ import { StateManager } from '../core/state-manager.js';
 import { ApiClient } from '../core/api-client.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
+import { FileActions } from './file-actions.js';
 
 export const FileManager = {
     /**
@@ -130,64 +131,65 @@ export const FileManager = {
     createFileRow(file) {
         const row = document.createElement('tr');
 
-        // Format date
         const modifiedDate = new Date(file.modified_date);
         const formattedDate = modifiedDate.toLocaleString();
 
-        // Determine file icon (Material Symbols)
-        // Audio files that can be played (already audiobooks)
         const isAudioFile = file.file_type === 'opus' || file.file_type === 'mp3';
         const fileIconClass = file.file_type === 'epub' ? 'book' :
                         file.file_type === 'srt' ? 'movie' :
                         file.file_type === 'txt' ? 'description' :
                         isAudioFile ? 'headphones' : 'attach_file';
 
-        // Check if file supports TTS (text-based files only, not audio files)
         const supportsTTS = ['epub', 'txt', 'srt'].includes(file.file_type);
-
+        const safeFilename = DomHelpers.escapeHtml(file.filename);
         const tooltipInfo = `${file.file_type.toUpperCase()} • ${file.size_mb} MB • ${formattedDate}`;
 
         row.innerHTML = `
             <td style="width: 36px; padding: 0.5rem;">
-                <input type="checkbox" class="file-checkbox" data-filename="${DomHelpers.escapeHtml(file.filename)}">
+                <input type="checkbox" class="file-checkbox" data-filename="${safeFilename}">
             </td>
             <td style="max-width: 0;">
-                <span class="clickable-filename" data-filename="${DomHelpers.escapeHtml(file.filename)}" data-action="open" title="${tooltipInfo}">
+                <span class="clickable-filename" data-filename="${safeFilename}" data-action="open" title="${tooltipInfo}">
                     <span class="material-symbols-outlined file-icon-cell">${fileIconClass}</span>
-                    <span class="filename-text">${DomHelpers.escapeHtml(file.filename)}</span>
+                    <span class="filename-text">${safeFilename}</span>
                 </span>
             </td>
-            <td style="width: 100px; text-align: center; white-space: nowrap; padding: 0.5rem;">
-                <div style="display: inline-flex; gap: 0.125rem; align-items: center; justify-content: center;">${supportsTTS ? `<button class="file-action-btn audiobook" data-filename="${DomHelpers.escapeHtml(file.filename)}" data-filepath="${DomHelpers.escapeHtml(file.file_path)}" data-action="audiobook" title="Generate Audiobook (TTS)"><span class="material-symbols-outlined" style="font-size: 0.875rem;">headphones</span></button>` : ''}<button class="file-action-btn download" data-filename="${DomHelpers.escapeHtml(file.filename)}" data-action="download" title="Download"><span class="material-symbols-outlined" style="font-size: 0.875rem;">download</span></button><button class="file-action-btn delete" data-filename="${DomHelpers.escapeHtml(file.filename)}" data-action="delete" title="Delete"><span class="material-symbols-outlined" style="font-size: 0.875rem;">delete</span></button></div>
+            <td class="file-row-actions">
+                <div class="file-action-group file-action-group--compact"></div>
             </td>
         `;
 
-        // Add event listeners
         const checkbox = row.querySelector('.file-checkbox');
         if (checkbox) {
             checkbox.addEventListener('change', () => this.toggleFileSelection(file.filename));
         }
 
-        const openLink = row.querySelector('[data-action="open"]');
+        const openLink = row.querySelector('.clickable-filename');
         if (openLink) {
-            openLink.addEventListener('click', () => this.openLocalFile(file.filename));
+            openLink.addEventListener('click', () => FileActions.open(file.filename));
         }
 
-        const downloadBtn = row.querySelector('[data-action="download"]');
-        if (downloadBtn) {
-            downloadBtn.addEventListener('click', () => this.downloadSingleFile(file.filename));
+        const actionsHost = row.querySelector('.file-action-group');
+
+        if (supportsTTS) {
+            const audiobookBtn = document.createElement('button');
+            audiobookBtn.type = 'button';
+            audiobookBtn.className = 'file-action-btn audiobook';
+            audiobookBtn.title = 'Generate Audiobook (TTS)';
+            audiobookBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 0.875rem;">headphones</span>';
+            audiobookBtn.addEventListener('click', () => window.createAudiobook(file.filename, file.file_path));
+            actionsHost.appendChild(audiobookBtn);
         }
 
-        const deleteBtn = row.querySelector('[data-action="delete"]');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => this.deleteSingleFile(file.filename));
-        }
-
-        const audiobookBtn = row.querySelector('[data-action="audiobook"]');
-        if (audiobookBtn) {
-            const filepath = audiobookBtn.getAttribute('data-filepath');
-            audiobookBtn.addEventListener('click', () => window.createAudiobook(file.filename, filepath));
-        }
+        const refreshAfterDelete = () => this.refreshFileList();
+        ['open', 'reveal', 'download', 'delete'].forEach(action => {
+            actionsHost.appendChild(FileActions.createActionButton({
+                action,
+                filename: file.filename,
+                variant: 'compact',
+                onAfter: action === 'delete' ? refreshAfterDelete : undefined
+            }));
+        });
 
         return row;
     },
@@ -287,30 +289,8 @@ export const FileManager = {
         }
     },
 
-    /**
-     * Download a single file
-     * @param {string} filename - Filename to download
-     */
-    async downloadSingleFile(filename) {
-        window.location.href = ApiClient.getFileDownloadUrl(filename);
-    },
-
-    /**
-     * Delete a single file
-     * @param {string} filename - Filename to delete
-     */
     async deleteSingleFile(filename) {
-        if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
-            return;
-        }
-
-        try {
-            const data = await ApiClient.deleteFile(filename);
-            MessageLogger.showMessage(data.message, 'success');
-            this.refreshFileList();
-        } catch (error) {
-            MessageLogger.showMessage(`Error deleting file: ${error.message}`, 'error');
-        }
+        await FileActions.delete(filename, { onDeleted: () => this.refreshFileList() });
     },
 
     /**
@@ -401,37 +381,9 @@ export const FileManager = {
         }
     },
 
-    /**
-     * Open file locally (using system default application)
-     * @param {string} filename - Filename to open
-     */
-    async openLocalFile(filename) {
-        try {
-            const data = await ApiClient.openLocalFile(filename);
-            MessageLogger.showMessage(`File opened: ${filename}`, 'success');
-            MessageLogger.addLog(`📂 Opened file: ${filename}`);
-        } catch (error) {
-            MessageLogger.showMessage(`Error opening file: ${error.message}`, 'error');
-        }
-    },
-
-    /**
-     * Reveal file in the system file explorer (Explorer/Finder/etc.)
-     * @param {string} filename - Filename to reveal
-     */
-    async revealLocalFile(filename) {
-        try {
-            await ApiClient.revealLocalFile(filename);
-            MessageLogger.addLog(`📁 Revealed in folder: ${filename}`);
-        } catch (error) {
-            MessageLogger.showMessage(`Error revealing file: ${error.message}`, 'error');
-        }
-    }
 };
 
-// Expose functions for onclick handlers in HTML
+// Selection toggle stays here (state lives in FileManager); the per-file
+// actions (open/reveal/download) are exposed globally by FileActions itself.
 window.toggleFileSelection = (filename) => FileManager.toggleFileSelection(filename);
-window.downloadSingleFile = (filename) => FileManager.downloadSingleFile(filename);
 window.deleteSingleFile = (filename) => FileManager.deleteSingleFile(filename);
-window.openLocalFile = (filename) => FileManager.openLocalFile(filename);
-window.revealLocalFile = (filename) => FileManager.revealLocalFile(filename);

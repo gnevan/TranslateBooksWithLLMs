@@ -237,6 +237,16 @@ export const ApiClient = {
     },
 
     /**
+     * Open the translations output folder in the system's file explorer
+     * @returns {Promise<Object>} Open result with folder_path
+     */
+    async openOutputFolder() {
+        return await apiRequest('/api/folders/output/open', {
+            method: 'POST'
+        });
+    },
+
+    /**
      * Clear uploaded files
      * @param {string[]} filePaths - Array of file paths to delete
      * @returns {Promise<Object>} Clear result
