@@ -4,10 +4,7 @@ __pycache__/
 /DoNotCommit/
 /translated_files/
 /data/
-.claude/*
-!.claude/commands/
-.claude/commands/*
-!.claude/commands/benchmark-*.md
+.claude/
 CLAUDE.md
 .env
 .env.*
