@@ -16,10 +16,10 @@ class GenericTranslator:
     """
     Generic orchestrator for translating files using format adapters.
 
-    This class replaces format-specific translation functions:
-    - translate_chunks() for TXT
-    - translate_subtitle_blocks() for SRT
-    - translate_epub_file() for EPUB
+    This is the single translation engine for TXT and SRT, shared by both the
+    web API and the CLI (via src.core.adapters.translate_file). The legacy
+    per-format functions it replaced (translate_chunks, the *_with_callbacks
+    dispatchers) have been removed.
 
     It provides a unified workflow:
     1. Prepare file via adapter

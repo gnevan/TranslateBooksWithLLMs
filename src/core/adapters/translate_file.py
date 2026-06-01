@@ -54,10 +54,9 @@ async def translate_file(
     """
     Translate a file using the adapter pattern.
 
-    This is the unified entry point for all file format translations, replacing:
-    - translate_text_file_with_callbacks() for TXT
-    - translate_srt_file_with_callbacks() for SRT
-    - translate_epub_file() for EPUB
+    This is the unified entry point for all file format translations (TXT,
+    SRT, EPUB, DOCX), used by both the web API and the CLI. It supersedes the
+    former per-format functions, which have been removed.
 
     Args:
         input_filepath: Path to the input file
