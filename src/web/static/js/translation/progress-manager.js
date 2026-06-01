@@ -436,27 +436,13 @@ export const ProgressManager = {
         const completed = stats.completed_chunks || 0;
         const total = stats.total_chunks || 0;
 
-        const phasePercent = total > 0 ? (completed / total) * 100 : 0;
-        const enableRefinement = !!stats.enable_refinement;
-
-        // Global bar value is server-authoritative: the backend now emits a
-        // single canonical `percent` (see src/core/progress) computed to match
-        // this client's historical formula exactly, so we display it verbatim
-        // instead of recomputing it. The legacy client-side computation is
-        // kept only as a fallback for payloads that predate the canonical
-        // field (e.g. an in-flight job started before an upgrade).
-        let globalPercent;
-        if (typeof stats.percent === 'number') {
-            globalPercent = stats.percent;
-        } else if (enableRefinement) {
-            // Legacy fallback: phase 1 -> 0-50%, phase 2 -> 50-100%.
-            const phase = stats.current_phase || 1;
-            globalPercent = phase === 2 ? 50 + phasePercent * 0.5 : phasePercent * 0.5;
-        } else if (typeof stats.progress_percent === 'number') {
-            globalPercent = stats.progress_percent;
-        } else {
-            globalPercent = phasePercent;
-        }
+        // The bar value is server-authoritative: the backend emits a single
+        // canonical `percent` (see src/core/progress) with the phase mapping
+        // and monotonic floor already applied. Display it verbatim; the chunk
+        // ratio is only a defensive fallback should `percent` ever be absent.
+        const globalPercent = typeof stats.percent === 'number'
+            ? stats.percent
+            : (total > 0 ? (completed / total) * 100 : 0);
         updateProgressBar(globalPercent);
 
         updateOperationLabel(stats);
