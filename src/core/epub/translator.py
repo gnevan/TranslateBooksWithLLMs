@@ -1069,7 +1069,10 @@ async def _save_checkpoint(
             # counters reset to zero after a pause (issue #180).
             checkpoint_manager.save_checkpoint(
                 translation_id=translation_id,
-                chunk_index=file_idx + 1,
+                # Uniform convention: store the LAST COMPLETED file index
+                # (resume adds +1), matching TXT/SRT. load_checkpoint maps it
+                # back via the 'resume_index_semantics' marker.
+                chunk_index=file_idx,
                 original_text=content_href,
                 translated_text=content_href,
                 chunk_data={'last_file': content_href, 'file_type': 'epub_xhtml'},

@@ -135,7 +135,12 @@ class Database:
                     'total_chunks': 0,
                     'completed_chunks': 0,
                     'failed_chunks': 0,
-                    'start_time': time.time()  # Use timestamp for compatibility with existing code
+                    'start_time': time.time(),  # Use timestamp for compatibility with existing code
+                    # Marks the uniform checkpoint convention: current_chunk_index
+                    # is the LAST COMPLETED unit for every format (resume = +1).
+                    # Absent on pre-migration checkpoints, which load_checkpoint
+                    # still handles via the legacy per-format branch.
+                    'resume_index_semantics': 'completed',
                 }
 
                 cursor.execute("""
