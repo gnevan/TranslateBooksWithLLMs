@@ -738,7 +738,7 @@ async def _translate_all_chunks_with_checkpoint(
     Returns:
         Tuple of (translated_chunks, statistics, was_interrupted)
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     CHECKPOINT_FREQUENCY = 5  # Save every 5 chunks
 
@@ -800,8 +800,8 @@ async def _translate_all_chunks_with_checkpoint(
                     bilingual=bilingual,
                     original_chunks=original_chunks,
                     protect_technical=True,  # Always enabled
-                    created_at=datetime.utcnow().isoformat() + 'Z',
-                    updated_at=datetime.utcnow().isoformat() + 'Z',
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
+                    updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
                     global_stats=global_stats_dict,
                 )
 
@@ -878,8 +878,8 @@ async def _translate_all_chunks_with_checkpoint(
                 bilingual=bilingual,
                 original_chunks=original_chunks,
                 protect_technical=True,
-                created_at=datetime.utcnow().isoformat() + 'Z',
-                updated_at=datetime.utcnow().isoformat() + 'Z',
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
+                updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
                 global_stats=global_stats_dict,
             )
 
