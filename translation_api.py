@@ -48,7 +48,8 @@ from src.config import (
     DEFAULT_MODEL,
     PORT,
     HOST,
-    OUTPUT_DIR
+    OUTPUT_DIR,
+    warn_env_config_missing,
 )
 from src.api.routes import configure_routes
 from src.api.websocket import configure_websocket_handlers
@@ -287,6 +288,9 @@ def test_ollama_connection():
 def start_server():
     """Start the translation server - can be called from launcher or directly"""
     try:
+        # If no .env was found, warn and list the effective settings (#187).
+        warn_env_config_missing()
+
         # Validate configuration before starting
         validate_configuration()
 

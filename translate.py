@@ -83,6 +83,17 @@ if __name__ == "__main__":
         elif args.provider == "gemini" and GEMINI_MODEL:
             args.model = GEMINI_MODEL
 
+    # If no .env was found, surface the *effective* settings now (after argparse)
+    # so the warning box shows the real CLI arguments rather than the import-time
+    # defaults (issue #187). No-op when a .env exists or running as executable.
+    from src.config import warn_env_config_missing, PORT
+    warn_env_config_missing(
+        provider=args.provider,
+        api_endpoint=args.api_endpoint,
+        model=args.model,
+        port=PORT,
+    )
+
     if args.output is None:
         base, ext = os.path.splitext(args.input)
         output_ext = ext

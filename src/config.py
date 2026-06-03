@@ -33,51 +33,16 @@ if _debug_mode:
     _config_logger.debug(f"📁 Looking for .env at: {_env_file.absolute()}")
     _config_logger.debug(f"📁 .env exists: {_env_exists}")
 
-if not _env_exists:
-    # Check if running as PyInstaller executable
-    _is_frozen = getattr(sys, 'frozen', False)
+# Whether the .env file is missing. The actual "no .env" warning is emitted
+# later by warn_env_config_missing(), which the entrypoints call AFTER they
+# have resolved their effective settings — so the warning shows the real CLI
+# arguments (provider, endpoint, model) instead of import-time defaults (#187).
+_is_frozen = getattr(sys, 'frozen', False)
+ENV_FILE_MISSING = not _env_exists
 
-    if not _is_frozen:
-        # Only show the interactive prompt when NOT running as executable
-        print("\n" + "="*70)
-        print("⚠️  WARNING: .env configuration file not found")
-        print("="*70)
-        print("\nThe application will run with default settings, but you may need to")
-        print("configure it for your specific setup.\n")
-
-        if _env_example.exists():
-            print("📋 QUICK SETUP:")
-            print(f"   1. Copy the template: copy .env.example .env")
-            print(f"   2. Edit .env to match your configuration")
-            print(f"   3. Restart the application\n")
-        else:
-            print("📋 MANUAL SETUP:")
-            print(f"   1. Create a .env file in: {Path.cwd()}")
-            print(f"   2. Add your configuration (see documentation)")
-            print(f"   3. Restart the application\n")
-
-        print("🔧 DEFAULT SETTINGS BEING USED:")
-        print(f"   • API Endpoint: http://localhost:11434/api/generate")
-        print(f"   • LLM Provider: ollama")
-        print(f"   • Model: qwen3:14b")
-        print(f"   • Port: 5000")
-        print(f"\n💡 TIP: If using a remote server or different provider, you MUST")
-        print(f"   create a .env file with the correct settings.\n")
-        print("="*70)
-        print("Press Ctrl+C to stop and configure, or wait 5 seconds to continue...")
-        print("="*70 + "\n")
-
-        # Give user time to read and react
-        import time
-        try:
-            time.sleep(5)
-        except KeyboardInterrupt:
-            print("\n\n⏹️  Startup cancelled by user. Please configure .env and try again.\n")
-            sys.exit(0)
-    else:
-        # Running as executable - silently use defaults
-        if _debug_mode:
-            _config_logger.debug("⚠️  .env not found, using defaults (executable mode)")
+if ENV_FILE_MISSING and _is_frozen and _debug_mode:
+    # Running as executable - silently use defaults
+    _config_logger.debug("⚠️  .env not found, using defaults (executable mode)")
 
 # Load .env file if it exists
 _dotenv_result = load_dotenv(_env_file)
@@ -152,6 +117,60 @@ _apply_reloadable_env_settings()
 PORT = int(os.getenv('PORT', '5000'))
 REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '900'))
 OLLAMA_NUM_CTX = int(os.getenv('OLLAMA_NUM_CTX', '4096'))
+
+
+def warn_env_config_missing(provider=None, api_endpoint=None, model=None, port=None):
+    """Warn that no .env was found, listing the settings actually in effect.
+
+    Entrypoints call this after resolving their effective configuration (CLI
+    args for translate.py, config defaults for the web server), so the box
+    reflects what the run will really use instead of hardcoded defaults (#187).
+
+    No-op when a .env exists or when running as a frozen executable.
+    """
+    if not ENV_FILE_MISSING or _is_frozen:
+        return
+
+    provider = LLM_PROVIDER if provider is None else provider
+    api_endpoint = API_ENDPOINT if api_endpoint is None else api_endpoint
+    model = DEFAULT_MODEL if model is None else model
+    port = PORT if port is None else port
+
+    print("\n" + "=" * 70)
+    print("⚠️  WARNING: .env configuration file not found")
+    print("=" * 70)
+    print("\nThe application will run with the settings below, but you may want to")
+    print("save them to a .env file for your specific setup.\n")
+
+    if _env_example.exists():
+        print("📋 QUICK SETUP:")
+        print("   1. Copy the template: copy .env.example .env")
+        print("   2. Edit .env to match your configuration")
+        print("   3. Restart the application\n")
+    else:
+        print("📋 MANUAL SETUP:")
+        print(f"   1. Create a .env file in: {Path.cwd()}")
+        print("   2. Add your configuration (see documentation)")
+        print("   3. Restart the application\n")
+
+    print("🔧 SETTINGS BEING USED:")
+    print(f"   • API Endpoint: {api_endpoint}")
+    print(f"   • LLM Provider: {provider}")
+    print(f"   • Model: {model}")
+    print(f"   • Port: {port}")
+    print("\n💡 TIP: These settings are not persisted. Create a .env file to")
+    print("   keep them across runs.\n")
+    print("=" * 70)
+    print("Press Ctrl+C to stop and configure, or wait 5 seconds to continue...")
+    print("=" * 70 + "\n")
+
+    # Give user time to read and react
+    import time
+    try:
+        time.sleep(5)
+    except KeyboardInterrupt:
+        print("\n\n⏹️  Startup cancelled by user. Please configure .env and try again.\n")
+        sys.exit(0)
 
 # =============================================================================
 # THINKING MODEL CONFIGURATION
