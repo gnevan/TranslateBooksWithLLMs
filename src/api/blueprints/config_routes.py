@@ -232,6 +232,8 @@ def create_config_blueprint(server_session_id=None):
             "nim_api_key_configured": nim_count > 0,
             "output_filename_pattern": _config.OUTPUT_FILENAME_PATTERN,
             "max_tokens_per_chunk": int(_config.MAX_TOKENS_PER_CHUNK),
+            "parallel_translations": int(_config.PARALLEL_TRANSLATIONS),
+            "max_parallel_translations": int(_config.MAX_PARALLEL_TRANSLATIONS),
             "disable_auto_pause": str(_config.DISABLE_AUTO_PAUSE).strip().lower() == 'true',
             # Webhook notifications — returned as-is for editing. URLs and tokens
             # only ever travel between this server and the same-origin browser
@@ -931,6 +933,7 @@ def create_config_blueprint(server_session_id=None):
             'OPENAI_API_ENDPOINT',
             'OUTPUT_FILENAME_PATTERN',
             'MAX_TOKENS_PER_CHUNK',
+            'PARALLEL_TRANSLATIONS',
             'DISABLE_AUTO_PAUSE',
             'NOTIFY_WEBHOOK_URL',
             'NOTIFY_WEBHOOK_METHOD',
@@ -961,6 +964,13 @@ def create_config_blueprint(server_session_id=None):
                         except (TypeError, ValueError):
                             continue
                         safe_value = str(max(50, min(1000, n)))
+                    # Clamp parallel workers to [1, MAX_PARALLEL_TRANSLATIONS].
+                    elif key == 'PARALLEL_TRANSLATIONS':
+                        try:
+                            n = int(safe_value)
+                        except (TypeError, ValueError):
+                            continue
+                        safe_value = str(max(1, min(_config.MAX_PARALLEL_TRANSLATIONS, n)))
                     updates[key] = safe_value
 
             if not updates:

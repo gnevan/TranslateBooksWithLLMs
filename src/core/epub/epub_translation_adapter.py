@@ -231,6 +231,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         # Extract global_stats from kwargs if provided
         global_total_chunks = kwargs.get('global_total_chunks')
         global_completed_chunks = kwargs.get('global_completed_chunks')
+        parallel_workers = kwargs.get('parallel_workers', 1)
 
         # Extract bilingual flag from prompt_options (bug fix #109)
         bilingual_flag = prompt_options.get('bilingual', False) if prompt_options else False
@@ -251,6 +252,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
                 check_interruption_callback=check_interruption_callback,
                 bilingual_flag=bilingual_flag,
                 file_href=file_href,
+                parallel_workers=parallel_workers,
             )
 
         success, stats = await translate_xhtml_simplified(
@@ -274,6 +276,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
             stats_callback=stats_callback,
             global_total_chunks=global_total_chunks,
             global_completed_chunks=global_completed_chunks,
+            parallel_workers=parallel_workers,
         )
 
         return success, stats
@@ -293,6 +296,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         check_interruption_callback: Optional[Callable],
         bilingual_flag: bool,
         file_href: Optional[str],
+        parallel_workers: int = 1,
     ) -> Tuple[bool, Any]:
         """
         Plain-text-mode translation path: skip placeholders entirely.
@@ -336,6 +340,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
             context_manager=context_manager,
             check_interruption_callback=check_interruption_callback,
             prompt_options=prompt_options,
+            parallel_workers=parallel_workers,
         )
 
         if was_interrupted:

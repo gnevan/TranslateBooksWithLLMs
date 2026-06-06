@@ -26,6 +26,7 @@ async def translate_docx_file(
     check_interruption_callback: Optional[Callable] = None,
     checkpoint_manager: Optional[Any] = None,
     translation_id: Optional[str] = None,
+    parallel_workers: int = 1,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -94,7 +95,8 @@ async def translate_docx_file(
         checkpoint_manager=checkpoint_manager,
         translation_id=translation_id,
         file_href=file_href,
-        resume_state=resume_state
+        resume_state=resume_state,
+        parallel_workers=parallel_workers
     )
 
     # Check if translation was interrupted

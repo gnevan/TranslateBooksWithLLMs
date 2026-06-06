@@ -16,7 +16,11 @@ import pytest
 from src.core.llm.base import normalize_api_keys
 from src.core.llm.exceptions import RateLimitError
 from src.core.llm.key_pool import KeyPool
-from src.core.llm.rate_limit_handler import compute_wait_time, handle_rate_limit
+from src.core.llm.rate_limit_handler import (
+    compute_wait_time,
+    handle_rate_limit,
+    is_retryable_http_status,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +121,29 @@ class TestComputeWaitTime:
 
     def test_at_least_one_second(self):
         assert compute_wait_time({"Retry-After": "0"}, attempt=0) == 1
+
+
+# ---------------------------------------------------------------------------
+# is_retryable_http_status
+# ---------------------------------------------------------------------------
+
+class TestIsRetryableHttpStatus:
+    def test_client_errors_fail_fast(self):
+        # 4xx (except 429) are caused by the request and won't recover on retry.
+        for code in (400, 401, 402, 403, 404, 410, 422):
+            assert is_retryable_http_status(code) is False, code
+
+    def test_rate_limit_is_retryable(self):
+        assert is_retryable_http_status(429) is True
+
+    def test_server_errors_are_retryable(self):
+        for code in (500, 502, 503, 504):
+            assert is_retryable_http_status(code) is True
+
+    def test_success_codes_are_retryable(self):
+        # Not normally reached via HTTPStatusError, but must not be classified
+        # as fail-fast.
+        assert is_retryable_http_status(200) is True
 
 
 # ---------------------------------------------------------------------------

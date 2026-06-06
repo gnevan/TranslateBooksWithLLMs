@@ -9,9 +9,25 @@ from flask import Blueprint, request, jsonify
 from src.config import (
     REQUEST_TIMEOUT,
     OLLAMA_NUM_CTX,
-    AUTO_PAUSE_ON_RATE_LIMIT
+    AUTO_PAUSE_ON_RATE_LIMIT,
+    PARALLEL_TRANSLATIONS,
+    MAX_PARALLEL_TRANSLATIONS,
 )
 from src.tts.tts_config import TTSConfig
+
+
+def _clamp_parallel_workers(value):
+    """Clamp the requested worker count to [1, MAX_PARALLEL_TRANSLATIONS].
+
+    Falls back to the PARALLEL_TRANSLATIONS default when absent or malformed.
+    Local-provider gating happens later in resolve_parallel_workers().
+    """
+    if value is None:
+        return PARALLEL_TRANSLATIONS
+    try:
+        return max(1, min(MAX_PARALLEL_TRANSLATIONS, int(value)))
+    except (TypeError, ValueError):
+        return PARALLEL_TRANSLATIONS
 
 
 def _resolve_api_key(value, env_var_name):
@@ -140,6 +156,7 @@ def create_translation_blueprint(state_manager, start_translation_job):
             'context_window': int(data.get('context_window', OLLAMA_NUM_CTX)),
             'max_attempts': int(data.get('max_attempts', 2)),
             'retry_delay': int(data.get('retry_delay', 2)),
+            'parallel_workers': _clamp_parallel_workers(data.get('parallel_workers')),
             'output_filename': data['output_filename'],
             'llm_provider': data.get('llm_provider', 'ollama'),
             'gemini_api_key': _resolve_api_key(data.get('gemini_api_key'), 'GEMINI_API_KEY'),

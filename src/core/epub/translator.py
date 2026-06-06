@@ -60,6 +60,7 @@ async def translate_epub_file(
     max_tokens_per_chunk: int = MAX_TOKENS_PER_CHUNK,
     max_attempts: int = None,
     bilingual: bool = False,
+    parallel_workers: int = 1,
 ) -> None:
     """
     Translate an EPUB file using LLM with generic orchestrator.
@@ -150,6 +151,12 @@ async def translate_epub_file(
     if llm_client is None:
         return
 
+    # Resolve effective parallel workers (local providers are forced back to 1).
+    # translate_file() already logged the effective count; this re-resolve is
+    # idempotent and covers the direct-call path (CLI EPUB goes through here).
+    from src.config import resolve_parallel_workers
+    parallel_workers = resolve_parallel_workers(llm_provider, parallel_workers)
+
     # Create adaptive context manager
     context_manager = _create_context_manager(
         llm_provider=llm_provider,
@@ -194,7 +201,8 @@ async def translate_epub_file(
                 stats_callback=stats_callback,
                 check_interruption_callback=check_interruption_callback,
                 prompt_options=prompt_options,
-                restored_docs=restored_docs
+                restored_docs=restored_docs,
+                parallel_workers=parallel_workers
             )
 
             # 4. Save translated files
@@ -542,6 +550,7 @@ async def _translate_single_xhtml_file(
     check_interruption_callback: Optional[Callable] = None,
     global_total_chunks: Optional[int] = None,
     global_completed_chunks: Optional[int] = None,
+    parallel_workers: int = 1,
 ) -> Tuple[Optional[etree._Element], bool, Any]:
     """
     Translate a single XHTML file using GenericTranslationOrchestrator.
@@ -617,6 +626,7 @@ async def _translate_single_xhtml_file(
             resume_state=resume_state,
             global_total_chunks=global_total_chunks,
             global_completed_chunks=global_completed_chunks,
+            parallel_workers=parallel_workers,
         )
 
         return doc_root, success, stats
@@ -786,7 +796,8 @@ async def _process_all_content_files(
     stats_callback: Optional[Callable] = None,
     check_interruption_callback: Optional[Callable] = None,
     prompt_options: Optional[Dict] = None,
-    restored_docs: Optional[Dict[str, etree._Element]] = None
+    restored_docs: Optional[Dict[str, etree._Element]] = None,
+    parallel_workers: int = 1
 ) -> Dict:
     """
     Process all XHTML content files using GenericTranslationOrchestrator.
@@ -919,10 +930,19 @@ async def _process_all_content_files(
             check_interruption_callback=check_interruption_callback,
             global_total_chunks=total_chunks,
             global_completed_chunks=completed_chunks_global,
+            parallel_workers=parallel_workers,
         )
 
-        # Update global chunk counter
-        completed_chunks_global += chunks_in_this_file
+        # Update global chunk counter. A fully-translated file contributes all
+        # its chunks. On interruption the file stopped early, so count only the
+        # chunks actually processed — otherwise the bar jumps to 100% at the
+        # moment of pausing and then drops on resume. Clean runs are unaffected
+        # (processed == chunks_in_this_file when the file completes).
+        interrupted_now = bool(check_interruption_callback and check_interruption_callback())
+        if interrupted_now and file_stats is not None:
+            completed_chunks_global += min(chunks_in_this_file, file_stats.processed_chunks)
+        else:
+            completed_chunks_global += chunks_in_this_file
 
         # Accumulate statistics
         if file_stats:

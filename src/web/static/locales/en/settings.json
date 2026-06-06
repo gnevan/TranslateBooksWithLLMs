@@ -46,6 +46,10 @@
   "disable_auto_pause_title": "Don't auto-pause on rate limit (HTTP 429)",
   "disable_auto_pause_description": "By default, the translation pauses after the provider rate-limits and asks you to resume manually. Enable this to keep the translation running: it will wait for <code>Retry-After</code> seconds (or 60s default) and auto-resume from the last checkpoint. Useful for long novels on free-tier APIs. Click \"Interrupt\" anytime to cancel the auto-resume.",
 
+  "parallel_workers_label": "Parallel requests",
+  "parallel_workers_input_title": "Number of chunks translated at the same time",
+  "parallel_workers_help": "Translate several chunks at once on cloud providers that allow concurrent requests. 1 keeps the original sequential behavior. Higher values are faster but may hit rate limits, and disable cross-chunk context for consistency. Ignored for local providers (Ollama).",
+
   "translation_options": "Translation Options",
   "post_processing": "Post-Processing",
   "system_prompts": "System Prompts",

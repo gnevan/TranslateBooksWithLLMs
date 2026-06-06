@@ -22,6 +22,21 @@ from .exceptions import RateLimitError
 from .key_pool import KeyPool
 
 
+def is_retryable_http_status(status_code: int) -> bool:
+    """Whether an HTTP status is worth retrying with the same request.
+
+    Client errors (4xx) are caused by the request itself and won't succeed on a
+    retry: 404 (model retired/unknown), 400 (bad request), 401/403 (auth), 402
+    (billing). Retrying them only wastes time and floods the log. The one
+    exception is 429 (rate limit), handled separately via handle_rate_limit().
+
+    Server errors (5xx) and anything else are treated as transient and retryable.
+    """
+    if status_code == 429:
+        return True
+    return not (400 <= status_code < 500)
+
+
 def compute_wait_time(headers: Mapping[str, str], attempt: int) -> int:
     """Derive a wait time in seconds from a 429 response.
 

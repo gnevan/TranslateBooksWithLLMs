@@ -22,7 +22,7 @@ from src.config import (
 )
 from ..base import LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
-from ..rate_limit_handler import handle_rate_limit
+from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
 # Four harm categories returned by the Gemini API. By default Gemini blocks
 # anything at MEDIUM and above on all four, which strips a significant portion
@@ -287,6 +287,11 @@ class GeminiProvider(LLMProvider):
                                                   "maximum input", "context length", "too many tokens"]
                     if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
                         raise ContextOverflowError(f"Gemini context overflow: {error_message}")
+
+                    # Client errors (404 model retired, 400/401/403) won't recover
+                    # on retry — fail fast instead of hammering the API 3x.
+                    if not is_retryable_http_status(e.response.status_code):
+                        return None
 
                     if attempt < MAX_TRANSLATION_ATTEMPTS - 1:
                         await asyncio.sleep(2)

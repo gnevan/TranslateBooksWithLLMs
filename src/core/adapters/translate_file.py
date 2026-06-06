@@ -49,6 +49,7 @@ async def translate_file(
     max_tokens_per_chunk: Optional[int] = None,
     prompt_options: Optional[Dict[str, Any]] = None,
     bilingual_output: bool = False,
+    parallel_workers: int = 1,
     **additional_config
 ) -> bool:
     """
@@ -120,6 +121,20 @@ async def translate_file(
         from src.config import MAX_TOKENS_PER_CHUNK as _DEFAULT_MAX_TOKENS
         max_tokens_per_chunk = _DEFAULT_MAX_TOKENS
 
+    # Resolve concurrent workers once here; local providers are forced to 1.
+    # Every downstream pipeline re-resolves idempotently.
+    from src.config import resolve_parallel_workers, is_local_provider
+    requested_workers = parallel_workers
+    parallel_workers = resolve_parallel_workers(llm_provider, parallel_workers)
+    if log_callback:
+        if parallel_workers > 1:
+            log_callback("parallel_enabled",
+                f"⚡ Parallel translation: {parallel_workers} concurrent chunks ({llm_provider})")
+        elif (requested_workers or 1) > 1 and is_local_provider(llm_provider):
+            log_callback("parallel_disabled_local",
+                f"ℹ️ Parallel translation requested ({requested_workers}) but '{llm_provider}' is a "
+                f"local provider — forced to 1 (a single local instance serializes requests).")
+
     # Detect file format - first by extension, then by content for unknown extensions
     _, ext = os.path.splitext(input_filepath.lower())
 
@@ -174,6 +189,7 @@ async def translate_file(
             resume_from_index=resume_from_index,
             prompt_options=prompt_options,
             bilingual=bilingual_output,
+            parallel_workers=parallel_workers,
             **additional_config
         )
         return True  # Legacy function doesn't return success status
@@ -213,7 +229,8 @@ async def translate_file(
             context_manager=None,
             check_interruption_callback=check_interruption_callback,
             checkpoint_manager=checkpoint_manager,
-            translation_id=translation_id
+            translation_id=translation_id,
+            parallel_workers=parallel_workers
         )
         return result.get('success', False)
 
@@ -278,6 +295,7 @@ async def translate_file(
         stats_callback=stats_callback,
         check_interruption_callback=check_interruption_callback,
         bilingual_output=bilingual_output,
+        parallel_workers=parallel_workers,
         **llm_config
     )
 

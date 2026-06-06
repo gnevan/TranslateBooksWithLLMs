@@ -21,7 +21,7 @@ import json
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
 from ..base import LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
-from ..rate_limit_handler import handle_rate_limit
+from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
 
 class PoeProvider(LLMProvider):
@@ -450,6 +450,11 @@ class PoeProvider(LLMProvider):
                 ]
                 if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
                     raise ContextOverflowError(f"Poe context overflow: {error_message}")
+
+                # Client errors (404 bot, 401 key, 402 credits, 400) won't
+                # recover on retry — fail fast.
+                if not is_retryable_http_status(e.response.status_code):
+                    return None
 
                 if attempt < MAX_TRANSLATION_ATTEMPTS - 1:
                     await asyncio.sleep(2)

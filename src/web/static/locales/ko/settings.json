@@ -46,6 +46,10 @@
   "disable_auto_pause_title": "속도 제한 (HTTP 429) 시 자동 일시 중지 안 함",
   "disable_auto_pause_description": "기본적으로 제공자가 속도 제한을 가하면 번역이 일시 중지되고 수동으로 재개하도록 요청합니다. 이 옵션을 활성화하면 번역이 계속 실행됩니다: <code>Retry-After</code> 초 (또는 기본 60초) 동안 대기한 다음 마지막 체크포인트에서 자동으로 재개됩니다. 무료 등급 API에서 긴 소설을 번역할 때 유용합니다. 자동 재개를 취소하려면 언제든지 \"중단\"을 클릭하세요.",
 
+  "parallel_workers_label": "병렬 요청",
+  "parallel_workers_input_title": "동시에 번역하는 청크 수",
+  "parallel_workers_help": "동시 요청을 허용하는 클라우드 제공업체에서 여러 청크를 한 번에 번역합니다. 1로 설정하면 원래의 순차 처리 동작을 유지합니다. 값이 높을수록 빠르지만 속도 제한에 걸릴 수 있으며, 일관성을 위한 청크 간 컨텍스트가 비활성화됩니다. 로컬 제공업체(Ollama)에서는 무시됩니다.",
+
   "translation_options": "번역 옵션",
   "post_processing": "후처리",
   "system_prompts": "시스템 프롬프트",

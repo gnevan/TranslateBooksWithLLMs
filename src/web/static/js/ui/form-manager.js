@@ -449,6 +449,18 @@ export const FormManager = {
                 }
             }
 
+            // Parallel requests default (seeds the input; per-job request overrides it)
+            if (config.parallel_translations) {
+                const parallelWorkersInput = DomHelpers.getElement('parallelWorkers');
+                if (parallelWorkersInput) {
+                    parallelWorkersInput.value = String(config.parallel_translations);
+                }
+                if (config.max_parallel_translations) {
+                    const pwEl = DomHelpers.getElement('parallelWorkers');
+                    if (pwEl) pwEl.max = String(config.max_parallel_translations);
+                }
+            }
+
             // Webhook notifications — populate fields from .env
             if ('notify_webhook_url' in config) {
                 DomHelpers.setValue('notifyWebhookUrl', config.notify_webhook_url || '');
@@ -730,6 +742,10 @@ export const FormManager = {
             bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
             // Disable auto-pause on rate limit (auto-resume after Retry-After)
             auto_pause_on_rate_limit: !(DomHelpers.getElement('disableAutoPause')?.checked || false),
+            // Parallel chunk translation (cloud only; backend gates local to 1)
+            parallel_workers: provider === 'ollama'
+                ? 1
+                : (parseInt(DomHelpers.getValue('parallelWorkers'), 10) || 1),
             // TTS configuration
             tts_enabled: ttsEnabled,
             tts_voice: ttsEnabled ? (DomHelpers.getValue('ttsVoice') || '') : '',

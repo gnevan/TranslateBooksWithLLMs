@@ -924,6 +924,17 @@
                         </label>
                     </div>
 
+                    <!-- Parallel translation (cloud providers only) -->
+                    <div class="form-group" id="parallelWorkersGroup" style="margin-bottom: 15px; display: none;">
+                        <label data-i18n="settings:parallel_workers_label" for="parallelWorkers">Parallel requests</label>
+                        <div class="neu-inset-light">
+                            <input type="number" class="form-control" id="parallelWorkers" min="1" max="16" step="1" value="1" data-i18n-attr="title:settings:parallel_workers_input_title" title="Number of chunks translated at the same time">
+                        </div>
+                        <small data-i18n="settings:parallel_workers_help" style="color: var(--text-muted-light); font-size: 0.6875rem; margin-top: 0.5rem; display: block;">
+                            Translate several chunks at once on cloud providers that allow concurrent requests. 1 keeps the original sequential behavior. Higher values are faster but may hit rate limits, and disable cross-chunk context for consistency. Ignored for local providers (Ollama).
+                        </small>
+                    </div>
+
                     <!-- Save Settings Button -->
                     <div class="form-group" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color);">
                         <button type="button" id="saveSettingsBtn" class="btn btn-primary" style="width: 100%;" onclick="saveSettings()" disabled>

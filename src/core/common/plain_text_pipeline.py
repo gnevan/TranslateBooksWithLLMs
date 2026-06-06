@@ -14,6 +14,8 @@ from src.core.text_processor import split_text_into_chunks
 from src.core.translator import generate_translation_request
 from src.core.post_processor import clean_translated_text
 from src.core.epub.translation_metrics import TranslationMetrics
+from src.core.common.parallel import iter_ordered_concurrent
+from src.core.llm.exceptions import RateLimitError
 
 
 PARAGRAPH_SEPARATOR = "\n\n"
@@ -58,6 +60,7 @@ async def translate_paragraphs_plain(
     context_manager: Optional[Any] = None,
     check_interruption_callback: Optional[Callable] = None,
     prompt_options: Optional[Dict] = None,
+    parallel_workers: int = 1,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate a list of plain-text paragraphs without placeholder preservation.
@@ -74,6 +77,10 @@ async def translate_paragraphs_plain(
         context_manager: AdaptiveContextManager (Ollama)
         check_interruption_callback: returns True to abort
         prompt_options: prompt customization (text_cleanup, glossary, etc.)
+        parallel_workers: number of chunks translated concurrently (already
+            resolved against the provider by the caller). When 1, behavior is
+            identical to the legacy sequential loop, including previous-chunk
+            context chaining; > 1 drops that chaining.
 
     Returns:
         (translated_paragraphs, stats, was_interrupted)
@@ -97,34 +104,25 @@ async def translate_paragraphs_plain(
     if stats_callback:
         stats_callback(stats.to_dict())
 
-    translated_parts: List[str] = []
+    workers = max(1, int(parallel_workers))
+    sequential = workers == 1
+
+    # Index-addressed results so out-of-order completion still reassembles in
+    # source order.
+    translated_parts: List[Optional[str]] = [None] * len(chunks)
     previous_translation_context = ""
 
-    for i, chunk in enumerate(chunks):
-        if check_interruption_callback and check_interruption_callback():
-            if log_callback:
-                log_callback(
-                    "plain_text_translation_interrupted",
-                    f"⏸️ Plain-text translation interrupted at chunk {i + 1}/{len(chunks)}"
-                )
-            for remaining in chunks[i:]:
-                translated_parts.append(remaining.get('main_content', ''))
-            return _finalize(translated_parts, source), stats, True
-
-        main_content = chunk.get('main_content', '')
+    async def _translate_chunk(i):
+        """Translate one chunk. Reads previous_translation_context only in
+        sequential mode (parallel runs have no stable previous chunk)."""
+        main_content = chunks[i].get('main_content', '')
         if not main_content.strip():
-            translated_parts.append(main_content)
-            stats.successful_first_try += 1
-            stats.record_processed()
-            if stats_callback:
-                stats_callback(stats.to_dict())
-            continue
-
+            return ('empty', main_content)
         translated = await generate_translation_request(
             main_content=main_content,
-            context_before=chunk.get('context_before', ''),
-            context_after=chunk.get('context_after', ''),
-            previous_translation_context=previous_translation_context,
+            context_before=chunks[i].get('context_before', ''),
+            context_after=chunks[i].get('context_after', ''),
+            previous_translation_context=(previous_translation_context if sequential else ""),
             source_language=source_language,
             target_language=target_language,
             model=model_name,
@@ -135,29 +133,83 @@ async def translate_paragraphs_plain(
             context_manager=context_manager,
             placeholder_format=None,
         )
+        return ('done', translated)
 
-        if translated is None:
+    def _fill_remaining_with_source():
+        for j in range(len(chunks)):
+            if translated_parts[j] is None:
+                translated_parts[j] = chunks[j].get('main_content', '')
+
+    pending = list(range(len(chunks)))
+    rate_limit_error = None
+    processed = 0
+
+    # Continuous concurrency with in-order delivery (see iter_ordered_concurrent).
+    async for i, result in iter_ordered_concurrent(
+        pending, workers, _translate_chunk, check_interruption_callback
+    ):
+        main_content = chunks[i].get('main_content', '')
+
+        if isinstance(result, RateLimitError):
+            rate_limit_error = result
+            break
+
+        if isinstance(result, Exception):
             if log_callback:
                 log_callback(
                     "plain_text_chunk_failed",
-                    f"Chunk {i + 1}/{len(chunks)} failed - keeping original text"
+                    f"Chunk {i + 1}/{len(chunks)} failed ({result}) - keeping original text"
                 )
-            translated_parts.append(main_content)
+            translated_parts[i] = main_content
             stats.failed_chunks += 1
         else:
-            translated = clean_translated_text(translated)
-            translated_parts.append(translated)
-            stats.successful_first_try += 1
-            words = translated.split()
-            previous_translation_context = (
-                " ".join(words[-25:]) if len(words) > 25 else translated
-            )
+            kind, value = result
+            if kind == 'empty':
+                translated_parts[i] = value
+                stats.successful_first_try += 1
+            elif value is None:
+                if log_callback:
+                    log_callback(
+                        "plain_text_chunk_failed",
+                        f"Chunk {i + 1}/{len(chunks)} failed - keeping original text"
+                    )
+                translated_parts[i] = main_content
+                stats.failed_chunks += 1
+            else:
+                cleaned = clean_translated_text(value)
+                translated_parts[i] = cleaned
+                stats.successful_first_try += 1
+                if sequential:
+                    words = cleaned.split()
+                    previous_translation_context = (
+                        " ".join(words[-25:]) if len(words) > 25 else cleaned
+                    )
 
         stats.record_processed()
         if stats_callback:
             stats_callback(stats.to_dict())
+        processed += 1
 
-    return _finalize(translated_parts, source), stats, False
+    if rate_limit_error is not None:
+        # Keep source text for everything not yet translated, then propagate to
+        # trigger the caller's pause/resume handling.
+        _fill_remaining_with_source()
+        raise rate_limit_error
+
+    # Interruption: the scheduler stopped launching new chunks; keep source text
+    # for the uncommitted tail and report the interruption.
+    if processed < len(chunks) and check_interruption_callback and check_interruption_callback():
+        if log_callback:
+            log_callback(
+                "plain_text_translation_interrupted",
+                f"⏸️ Plain-text translation interrupted at chunk {processed + 1}/{len(chunks)}"
+            )
+        _fill_remaining_with_source()
+        return _finalize([p if p is not None else "" for p in translated_parts], source), stats, True
+
+    # Any None left (shouldn't happen) falls back to empty string.
+    safe_parts = [p if p is not None else "" for p in translated_parts]
+    return _finalize(safe_parts, source), stats, False
 
 
 def _finalize(translated_parts: List[str], source_paragraphs: List[str]) -> List[str]:

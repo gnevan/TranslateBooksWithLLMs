@@ -101,6 +101,11 @@ function getTranslationConfig(file) {
         refine_only: operation === 'refine',
         refine_after: refineAfter,
         auto_pause_on_rate_limit: !(DomHelpers.getElement('disableAutoPause')?.checked || false),
+        // Parallel chunk translation; only honored for cloud providers (the
+        // backend forces local providers back to 1).
+        parallel_workers: provider === 'ollama'
+            ? 1
+            : (parseInt(DomHelpers.getValue('parallelWorkers'), 10) || 1),
         tts_enabled: ttsEnabled,
         tts_voice: ttsEnabled ? (DomHelpers.getValue('ttsVoice') || '') : '',
         tts_rate: ttsEnabled ? (DomHelpers.getValue('ttsRate') || '+0%') : '+0%',

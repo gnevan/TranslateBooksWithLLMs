@@ -88,11 +88,16 @@ _RELOADABLE_ENV_SETTINGS = (
     ('NOTIFY_ON_FAILURE',      'NOTIFY_ON_FAILURE',      'true'),
     ('NOTIFY_ON_INTERRUPTION', 'NOTIFY_ON_INTERRUPTION', 'false'),
     ('NOTIFY_TIMEOUT_SECONDS', 'NOTIFY_TIMEOUT_SECONDS', '5'),
+    # Parallel translation default (web UI seeds its input from this and can
+    # save it back via /api/settings; reloadable so changes apply without a
+    # server restart).
+    ('PARALLEL_TRANSLATIONS', 'PARALLEL_TRANSLATIONS', '1'),
 )
 
 
 _NOTIFY_BOOL_ATTRS = {'NOTIFY_ON_SUCCESS', 'NOTIFY_ON_FAILURE', 'NOTIFY_ON_INTERRUPTION'}
 _NOTIFY_INT_ATTRS = {'NOTIFY_TIMEOUT_SECONDS'}
+_INT_ATTRS = {'PARALLEL_TRANSLATIONS'}
 
 
 def _apply_reloadable_env_settings():
@@ -101,7 +106,7 @@ def _apply_reloadable_env_settings():
         raw = os.getenv(env_var, default)
         if attr in _NOTIFY_BOOL_ATTRS:
             g[attr] = str(raw).strip().lower() == 'true'
-        elif attr in _NOTIFY_INT_ATTRS:
+        elif attr in _NOTIFY_INT_ATTRS or attr in _INT_ATTRS:
             try:
                 g[attr] = int(raw)
             except (TypeError, ValueError):
@@ -117,6 +122,54 @@ _apply_reloadable_env_settings()
 PORT = int(os.getenv('PORT', '5000'))
 REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '300'))
 OLLAMA_NUM_CTX = int(os.getenv('OLLAMA_NUM_CTX', '4096'))
+
+# =============================================================================
+# PARALLEL TRANSLATION CONFIGURATION
+# =============================================================================
+# Number of chunks translated concurrently. Defaults to 1 (fully sequential,
+# byte-for-byte identical to the legacy behavior, including cross-chunk
+# translation context chaining). Values > 1 dispatch that many LLM requests at
+# once in ordered windows; the per-chunk "previous translation" context is
+# dropped in that mode (source context_before/after is still used).
+#
+# Only cloud providers benefit: a single local Ollama instance serializes
+# requests anyway, so resolve_parallel_workers() forces local providers back to
+# 1 regardless of this setting. See is_local_provider().
+# PARALLEL_TRANSLATIONS is set via _apply_reloadable_env_settings() (above) so
+# the web UI can change it at runtime through /api/settings.
+
+# Upper bound for the parallel worker count, both as a sanity cap and to keep
+# the web UI slider/CLI within a reasonable range. Cloud rate limits make very
+# high values counter-productive.
+MAX_PARALLEL_TRANSLATIONS = int(os.getenv('MAX_PARALLEL_TRANSLATIONS', '16'))
+
+# Providers that run on the user's own machine and serialize requests through a
+# single model instance. Parallel dispatch gives them no speedup and can
+# saturate the GPU, so the concurrency control is disabled for them.
+LOCAL_PROVIDERS = {'ollama'}
+
+
+def is_local_provider(provider: Optional[str]) -> bool:
+    """Return True for providers that run locally and serialize requests."""
+    return (provider or '').strip().lower() in LOCAL_PROVIDERS
+
+
+def resolve_parallel_workers(provider: Optional[str], requested: Optional[int] = None) -> int:
+    """Resolve the effective number of concurrent translation workers.
+
+    Local providers are always forced to 1 (no benefit, risk of saturation).
+    Cloud providers honor `requested` (falling back to PARALLEL_TRANSLATIONS),
+    clamped to the [1, MAX_PARALLEL_TRANSLATIONS] window.
+    """
+    if is_local_provider(provider):
+        return 1
+    if requested is None:
+        requested = PARALLEL_TRANSLATIONS
+    try:
+        requested = int(requested)
+    except (TypeError, ValueError):
+        requested = 1
+    return max(1, min(MAX_PARALLEL_TRANSLATIONS, requested))
 
 
 def warn_env_config_missing(provider=None, api_endpoint=None, model=None, port=None):
@@ -599,6 +652,10 @@ class TranslationConfig:
     max_tokens_per_chunk: int = MAX_TOKENS_PER_CHUNK
     soft_limit_ratio: float = SOFT_LIMIT_RATIO
 
+    # Parallel translation (concurrent chunks). Effective value is resolved at
+    # run time via resolve_parallel_workers() so local providers stay at 1.
+    parallel_workers: int = PARALLEL_TRANSLATIONS
+
     # Interface-specific
     interface_type: str = "cli"  # or "web"
     enable_colors: bool = True
@@ -623,7 +680,8 @@ class TranslationConfig:
             poe_api_key=getattr(args, 'poe_api_key', POE_API_KEY),
             nim_api_key=getattr(args, 'nim_api_key', NIM_API_KEY),
             max_tokens_per_chunk=getattr(args, 'max_tokens_per_chunk', MAX_TOKENS_PER_CHUNK),
-            soft_limit_ratio=getattr(args, 'soft_limit_ratio', SOFT_LIMIT_RATIO)
+            soft_limit_ratio=getattr(args, 'soft_limit_ratio', SOFT_LIMIT_RATIO),
+            parallel_workers=getattr(args, 'parallel', PARALLEL_TRANSLATIONS)
         )
 
     @classmethod
@@ -636,6 +694,14 @@ class TranslationConfig:
             clamped_max_tokens = max(50, min(1000, requested_max_tokens))
         except (TypeError, ValueError):
             clamped_max_tokens = MAX_TOKENS_PER_CHUNK
+
+        # Clamp parallel workers to [1, MAX_PARALLEL_TRANSLATIONS], falling back
+        # to the .env default when absent or malformed.
+        try:
+            requested_workers = int(request_data.get('parallel_workers', PARALLEL_TRANSLATIONS))
+            clamped_workers = max(1, min(MAX_PARALLEL_TRANSLATIONS, requested_workers))
+        except (TypeError, ValueError):
+            clamped_workers = PARALLEL_TRANSLATIONS
 
         return cls(
             source_language=request_data.get('source_language', DEFAULT_SOURCE_LANGUAGE),
@@ -660,7 +726,8 @@ class TranslationConfig:
             poe_api_key=request_data.get('poe_api_key', POE_API_KEY),
             nim_api_key=request_data.get('nim_api_key', NIM_API_KEY),
             max_tokens_per_chunk=clamped_max_tokens,
-            soft_limit_ratio=request_data.get('soft_limit_ratio', SOFT_LIMIT_RATIO)
+            soft_limit_ratio=request_data.get('soft_limit_ratio', SOFT_LIMIT_RATIO),
+            parallel_workers=clamped_workers
         )
 
     def to_dict(self) -> dict:
@@ -683,7 +750,8 @@ class TranslationConfig:
             'poe_api_key': self.poe_api_key,
             'nim_api_key': self.nim_api_key,
             'max_tokens_per_chunk': self.max_tokens_per_chunk,
-            'soft_limit_ratio': self.soft_limit_ratio
+            'soft_limit_ratio': self.soft_limit_ratio,
+            'parallel_workers': self.parallel_workers
         }
 
 

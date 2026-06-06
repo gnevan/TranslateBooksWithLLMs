@@ -46,6 +46,10 @@
   "disable_auto_pause_title": "速率限制（HTTP 429）时不自动暂停",
   "disable_auto_pause_description": "默认情况下，当服务商触发速率限制时翻译会暂停，并要求您手动恢复。启用此选项以让翻译持续运行：它会等待 <code>Retry-After</code> 秒（或默认 60 秒），然后从最后的检查点自动恢复。适合在免费层 API 上跑长篇小说。随时点击\"中断\"可取消自动恢复。",
 
+  "parallel_workers_label": "并行请求",
+  "parallel_workers_input_title": "同时翻译的文本块数量",
+  "parallel_workers_help": "在允许并发请求的云服务商上同时翻译多个文本块。设为 1 时保持原有的顺序处理行为。更高的值速度更快，但可能触发速率限制，并会为保持一致性而禁用跨块上下文。本地服务商（Ollama）会忽略此设置。",
+
   "translation_options": "翻译选项",
   "post_processing": "后处理",
   "system_prompts": "系统提示词",

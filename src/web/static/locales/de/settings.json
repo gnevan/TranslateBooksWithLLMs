@@ -46,6 +46,10 @@
   "disable_auto_pause_title": "Bei Ratenbegrenzung (HTTP 429) nicht automatisch pausieren",
   "disable_auto_pause_description": "Standardmäßig wird die Übersetzung pausiert, sobald der Anbieter eine Ratenbegrenzung anwendet, und Sie werden um manuelles Fortsetzen gebeten. Aktivieren Sie diese Option, damit die Übersetzung weiterläuft: Sie wartet <code>Retry-After</code> Sekunden (oder standardmäßig 60 s) und setzt automatisch ab dem letzten Checkpoint fort. Nützlich für lange Romane mit Free-Tier-APIs. Klicken Sie jederzeit auf „Abbrechen“, um die automatische Fortsetzung zu beenden.",
 
+  "parallel_workers_label": "Parallele Anfragen",
+  "parallel_workers_input_title": "Anzahl der gleichzeitig übersetzten Abschnitte",
+  "parallel_workers_help": "Übersetzen Sie mehrere Abschnitte gleichzeitig bei Cloud-Anbietern, die parallele Anfragen erlauben. 1 behält das ursprüngliche sequenzielle Verhalten bei. Höhere Werte sind schneller, können aber Ratenbegrenzungen erreichen und deaktivieren den abschnittsübergreifenden Kontext für die Konsistenz. Bei lokalen Anbietern (Ollama) wird der Wert ignoriert.",
+
   "translation_options": "Übersetzungsoptionen",
   "post_processing": "Nachbearbeitung",
   "system_prompts": "System-Prompts",

@@ -437,6 +437,15 @@ export const ProviderManager = {
             if (nimSettings) nimSettings.style.display = 'block';
             if (loadModels) this.loadNimModels();
         }
+
+        // Parallel translation is only useful for cloud providers; a single
+        // local Ollama instance serializes requests anyway (mirrors the backend
+        // LOCAL_PROVIDERS gate). Hide the control for local providers.
+        const parallelGroup = DomHelpers.getElement('parallelWorkersGroup');
+        if (parallelGroup) {
+            const isLocal = provider === 'ollama';
+            parallelGroup.style.display = isLocal ? 'none' : 'block';
+        }
     },
 
     /**

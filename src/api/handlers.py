@@ -466,7 +466,8 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 min_chunk_size=config.get('min_chunk_size', 5),
                 max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
                 prompt_options=config.get('prompt_options', {}),
-                bilingual_output=config.get('bilingual_output', False)
+                bilingual_output=config.get('bilingual_output', False),
+                parallel_workers=config.get('parallel_workers', 1)
             )
 
             # Optional chained refinement pass on the translated output.

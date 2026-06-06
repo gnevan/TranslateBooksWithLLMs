@@ -257,6 +257,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         from ..epub.translation_metrics import TranslationMetrics
 
         source_path = raw_content  # DOCX file path
+        parallel_workers = kwargs.get('parallel_workers', 1)
 
         # Use filename as file_href if not provided
         if not file_href:
@@ -277,6 +278,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
                 prompt_options=prompt_options,
                 stats_callback=stats_callback,
                 check_interruption_callback=check_interruption_callback,
+                parallel_workers=parallel_workers,
             )
 
         # === RESUME FROM PARTIAL STATE ===
@@ -364,6 +366,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             # Pass global stats for DOCX (single file = global stats)
             global_total_chunks=total_chunks,
             global_completed_chunks=completed_chunks,
+            parallel_workers=parallel_workers,
         )
 
         # If interrupted, save state and return partial result
@@ -406,6 +409,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         prompt_options: Optional[Dict],
         stats_callback: Optional[Callable],
         check_interruption_callback: Optional[Callable],
+        parallel_workers: int = 1,
     ) -> Tuple[bytes, Any]:
         """
         Plain-text-mode DOCX translation: skip mammoth + placeholders.
@@ -449,6 +453,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             context_manager=context_manager,
             check_interruption_callback=check_interruption_callback,
             prompt_options=prompt_options,
+            parallel_workers=parallel_workers,
         )
 
         if was_interrupted:

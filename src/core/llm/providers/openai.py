@@ -12,7 +12,7 @@ import httpx
 
 from ..base import LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
-from ..rate_limit_handler import handle_rate_limit
+from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 from ..utils.context_detection import ContextDetector
 
 from src.config import (
@@ -259,6 +259,13 @@ class OpenAICompatibleProvider(LLMProvider):
                     print(f"{YELLOW}⚠️ OpenAI-compatible API HTTP Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}{RESET}")
                     if error_body:
                         print(f"{YELLOW}   Response: {error_body[:200]}...{RESET}")
+
+                # Client errors (404 wrong path/model, 401/403 auth, 400) won't
+                # recover on retry — fail fast. 429 stays retryable (handled above
+                # when a key pool exists, otherwise retried with backoff).
+                if (e.response is not None
+                        and not is_retryable_http_status(e.response.status_code)):
+                    return None
 
                 if attempt < MAX_TRANSLATION_ATTEMPTS - 1:
                     if self.log_callback:

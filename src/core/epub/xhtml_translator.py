@@ -700,6 +700,7 @@ async def _translate_all_chunks_with_checkpoint(
     # Global statistics (for EPUB with multiple XHTML files)
     global_total_chunks: Optional[int] = None,
     global_completed_chunks: Optional[int] = None,
+    parallel_workers: int = 1,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate all chunks with checkpoint support.
@@ -754,64 +755,61 @@ async def _translate_all_chunks_with_checkpoint(
     if stats_callback:
         stats_callback(stats.to_dict())
 
-    # Translate from start_chunk_index
-    for i in range(start_chunk_index, len(chunks)):
+    from src.core.common.parallel import iter_ordered_concurrent
+    from src.core.llm.exceptions import RateLimitError
+
+    # EPUB chunks carry no cross-chunk translation context (the prompt is built
+    # with previous_translation_context=""), so they parallelize cleanly. The
+    # ordered-concurrent scheduler keeps translated_chunks a contiguous prefix
+    # (resume-safe) while keeping the request pool full. parallel_workers is
+    # already resolved by the caller (local providers forced to 1).
+    workers = max(1, int(parallel_workers))
+
+    def _save_state(next_index):
+        """Persist resume state with current_chunk_index = next chunk to do."""
+        if not (checkpoint_manager and translation_id and file_href):
+            return
+        from .xhtml_translation_state import XHTMLTranslationState
+
+        global_stats_dict = None
+        if global_total_chunks is not None and global_completed_chunks is not None:
+            completed = stats.successful_first_try + stats.successful_after_retry
+            global_stats_dict = {
+                'total_chunks': global_total_chunks,
+                'completed_chunks': global_completed_chunks + completed,
+                'failed_chunks': stats.failed_chunks,
+            }
+
+        state = XHTMLTranslationState(
+            file_path=file_path or file_href,
+            translation_id=translation_id,
+            file_href=file_href,
+            source_language=source_language,
+            target_language=target_language,
+            model_name=model_name,
+            max_tokens_per_chunk=max(len(c.get('text', '')) for c in chunks) if chunks else 1000,
+            max_retries=max_retries,
+            chunks=chunks,
+            global_tag_map=global_tag_map or {},
+            placeholder_format=placeholder_format,
+            translated_chunks=translated_chunks,
+            current_chunk_index=next_index,
+            original_body_html="",
+            doc_metadata={},
+            stats=stats.to_dict(),
+            prompt_options=prompt_options,
+            bilingual=bilingual,
+            original_chunks=original_chunks,
+            protect_technical=True,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
+            updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
+            global_stats=global_stats_dict,
+        )
+        checkpoint_manager.save_xhtml_partial_state(translation_id, file_href, state)
+
+    async def _translate_one(i):
         chunk = chunks[i]
-
-        # === CHECK FOR INTERRUPTION ===
-        if check_interruption_callback and check_interruption_callback():
-            if log_callback:
-                log_callback("xhtml_translation_interrupted",
-                    f"⏸️ Translation interrupted at chunk {i}/{len(chunks)}")
-
-            # Save current state before interrupting
-            if checkpoint_manager and translation_id and file_href:
-                from .xhtml_translation_state import XHTMLTranslationState
-
-                # Calculate global stats if provided
-                global_stats_dict = None
-                if global_total_chunks is not None and global_completed_chunks is not None:
-                    # completed_chunks is a computed property, not a direct attribute
-                    completed = stats.successful_first_try + stats.successful_after_retry
-                    global_stats_dict = {
-                        'total_chunks': global_total_chunks,
-                        'completed_chunks': global_completed_chunks + completed,
-                        'failed_chunks': stats.failed_chunks,
-                    }
-
-                state = XHTMLTranslationState(
-                    file_path=file_path or file_href,
-                    translation_id=translation_id,
-                    file_href=file_href,
-                    source_language=source_language,
-                    target_language=target_language,
-                    model_name=model_name,
-                    max_tokens_per_chunk=max(len(c.get('text', '')) for c in chunks) if chunks else 1000,
-                    max_retries=max_retries,
-                    chunks=chunks,
-                    global_tag_map=global_tag_map or {},
-                    placeholder_format=placeholder_format,
-                    translated_chunks=translated_chunks,
-                    current_chunk_index=i,  # Next chunk to translate
-                    original_body_html="",  # Not needed for resume
-                    doc_metadata={},
-                    stats=stats.to_dict(),
-                    prompt_options=prompt_options,
-                    bilingual=bilingual,
-                    original_chunks=original_chunks,
-                    protect_technical=True,  # Always enabled
-                    created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
-                    updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
-                    global_stats=global_stats_dict,
-                )
-
-                checkpoint_manager.save_xhtml_partial_state(translation_id, file_href, state)
-
-            # Return with interrupted flag
-            return translated_chunks, stats, True  # was_interrupted=True
-
-        # === TRANSLATE CHUNK ===
-        translated = await translate_chunk_with_fallback(
+        return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
             global_indices=chunk['global_indices'],
@@ -826,74 +824,70 @@ async def _translate_all_chunks_with_checkpoint(
             placeholder_format=placeholder_format,
             prompt_options=prompt_options
         )
-        translated_chunks.append(translated)
+
+    pending = list(range(start_chunk_index, len(chunks)))
+    rate_limit_error = None
+
+    # Continuous concurrency with in-order delivery: translated_chunks stays a
+    # contiguous prefix (resume-safe) while up to `workers` requests run at once.
+    async for i, result in iter_ordered_concurrent(
+        pending, workers, _translate_one, check_interruption_callback
+    ):
+        if isinstance(result, RateLimitError):
+            # Stop before appending this chunk so resume restarts at it.
+            rate_limit_error = result
+            break
+        if isinstance(result, Exception):
+            # Non-rate-limit errors propagate as before (after persisting the
+            # contiguous prefix already appended).
+            if checkpoint_manager and translation_id and file_href and translated_chunks:
+                _save_state(len(translated_chunks))
+            raise result
+
+        translated_chunks.append(result)
+        i_done = i
 
         # === HEALTH CHECK ===
-        # Warn loudly once if the LLM is failing to preserve placeholders at a high
-        # rate. Without this, retries pile up silently — wasting compute and yielding
-        # poor translations the user has no way to diagnose mid-run.
+        # Warn loudly once if the LLM is failing to preserve placeholders at a
+        # high rate. Without this, retries pile up silently.
         quality_warning = stats.check_quality_warning()
         if quality_warning and log_callback:
             log_callback("quality_warning", quality_warning)
 
-        # === PERIODIC CHECKPOINT ===
-        # Save every N chunks (and at the last chunk)
+        # === PERIODIC CHECKPOINT === (every N chunks and at the last chunk)
         should_checkpoint = (
-            (i + 1) % CHECKPOINT_FREQUENCY == 0 or  # Every N chunks
-            (i + 1) == len(chunks)  # Last chunk
+            (i_done + 1) % CHECKPOINT_FREQUENCY == 0 or
+            (i_done + 1) == len(chunks)
         )
-
-        if should_checkpoint and checkpoint_manager and translation_id and file_href:
-            from .xhtml_translation_state import XHTMLTranslationState
-
-            # Calculate global stats if provided
-            global_stats_dict = None
-            if global_total_chunks is not None and global_completed_chunks is not None:
-                # completed_chunks is a computed property, not a direct attribute
-                completed = stats.successful_first_try + stats.successful_after_retry
-                global_stats_dict = {
-                    'total_chunks': global_total_chunks,
-                    'completed_chunks': global_completed_chunks + completed,
-                    'failed_chunks': stats.failed_chunks,
-                }
-
-            state = XHTMLTranslationState(
-                file_path=file_path or file_href,
-                translation_id=translation_id,
-                file_href=file_href,
-                source_language=source_language,
-                target_language=target_language,
-                model_name=model_name,
-                max_tokens_per_chunk=max(len(c.get('text', '')) for c in chunks) if chunks else 1000,
-                max_retries=max_retries,
-                chunks=chunks,
-                global_tag_map=global_tag_map or {},
-                placeholder_format=placeholder_format,
-                translated_chunks=translated_chunks,
-                current_chunk_index=i + 1,  # Next chunk to translate
-                original_body_html="",
-                doc_metadata={},
-                stats=stats.to_dict(),
-                prompt_options=prompt_options,
-                bilingual=bilingual,
-                original_chunks=original_chunks,
-                protect_technical=True,
-                created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
-                updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
-                global_stats=global_stats_dict,
-            )
-
-            checkpoint_manager.save_xhtml_partial_state(translation_id, file_href, state)
-
+        if should_checkpoint:
+            _save_state(i_done + 1)
             if log_callback:
                 log_callback("xhtml_checkpoint_saved",
-                    f"💾 Checkpoint saved: chunk {i + 1}/{len(chunks)}")
+                    f"💾 Checkpoint saved: chunk {i_done + 1}/{len(chunks)}")
 
         # Report progress after completing each chunk
         if stats_callback:
             stats_callback(stats.to_dict())
 
-    # Translation complete without interruption
+    if rate_limit_error is not None:
+        # Persist the contiguous prefix appended before the limit, then
+        # propagate to let the caller pause/resume.
+        if checkpoint_manager and translation_id and file_href and translated_chunks:
+            _save_state(len(translated_chunks))
+        raise rate_limit_error
+
+    # Interruption: the scheduler stopped launching new chunks; the appended
+    # prefix is contiguous, so save resume state at the next index. translated_chunks
+    # is the full list from index 0 (resume restores the prefix), so its length IS
+    # the absolute next index — do NOT add start_chunk_index (that double-counts).
+    next_index = len(translated_chunks)
+    if next_index < len(chunks) and check_interruption_callback and check_interruption_callback():
+        if log_callback:
+            log_callback("xhtml_translation_interrupted",
+                f"⏸️ Translation interrupted at chunk {next_index}/{len(chunks)}")
+        _save_state(next_index)
+        return translated_chunks, stats, True  # was_interrupted=True
+
     return translated_chunks, stats, False  # was_interrupted=False
 
 
@@ -1373,6 +1367,7 @@ async def translate_xhtml_simplified(
     # Global statistics (for EPUB with multiple XHTML files)
     global_total_chunks: Optional[int] = None,
     global_completed_chunks: Optional[int] = None,
+    parallel_workers: int = 1,
 ) -> Tuple[bool, 'TranslationMetrics']:
     """
     Translate an XHTML document using the simplified approach.
@@ -1546,6 +1541,7 @@ async def translate_xhtml_simplified(
         original_chunks=original_chunks,
         global_total_chunks=global_total_chunks,
         global_completed_chunks=global_completed_chunks,
+        parallel_workers=parallel_workers,
     )
 
     # If interrupted, return without reconstruction

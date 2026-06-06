@@ -343,6 +343,12 @@ class TranslationMetrics:
         metrics.successful_after_retry = data.get("successful_after_retry", 0)
         metrics.fallback_used = data.get("fallback_used", 0)
         metrics.failed_chunks = data.get("failed_chunks", 0)
+        # Progress counter. to_dict() reports completed_chunks = processed_chunks,
+        # so this MUST round-trip or the progress bar restarts near zero on
+        # resume (it would then count only the chunks done in the new session,
+        # not the restored prefix).
+        metrics.processed_chunks = data.get("processed_chunks", 0)
+        metrics.refinement_chunks_completed = data.get("refinement_chunks_completed", 0)
 
         # Retry & error tracking
         metrics.retry_attempts = data.get("retry_attempts", 0)

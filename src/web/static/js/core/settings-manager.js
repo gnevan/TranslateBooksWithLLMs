@@ -150,7 +150,8 @@ export const SettingsManager = {
             { id: 'deepseekApiKey', event: 'input' },
             { id: 'poeApiKey', event: 'input' },
             { id: 'nimApiKey', event: 'input' },
-            { id: 'disableAutoPause', event: 'change' }
+            { id: 'disableAutoPause', event: 'change' },
+            { id: 'parallelWorkers', event: 'input' }
         ];
 
         envDirtyElements.forEach(({ id, event }) => {
@@ -501,6 +502,14 @@ export const SettingsManager = {
             // Save disable auto-pause flag (runtime behavior default)
             const disableAutoPauseCheckbox = DomHelpers.getElement('disableAutoPause');
             envSettings['DISABLE_AUTO_PAUSE'] = (disableAutoPauseCheckbox && disableAutoPauseCheckbox.checked) ? 'true' : 'false';
+
+            // Save parallel-requests default (the per-job request still overrides
+            // this; it only seeds the input on next load). Backend clamps it.
+            const parallelWorkersInput = DomHelpers.getElement('parallelWorkers');
+            if (parallelWorkersInput) {
+                const pw = parseInt(parallelWorkersInput.value, 10);
+                envSettings['PARALLEL_TRANSLATIONS'] = String(Number.isFinite(pw) && pw > 0 ? pw : 1);
+            }
 
             // Webhook notifications — always serialized (even empty) so the user
             // can disable notifications by clearing the URL and clicking Save.
