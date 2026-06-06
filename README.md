@@ -153,6 +153,7 @@ python translate.py -i book.txt --provider openai \
 | `-tl, --target_lang` | Target language | Chinese |
 | `-m, --model` | Model name | qwen3:14b |
 | `--provider` | ollama/openrouter/openai/gemini/mistral/deepseek/poe/nim | ollama |
+| `--parallel` | Chunks translated concurrently (cloud only; Ollama stays at 1) | 1 |
 | `--text-cleanup` | OCR/typographic cleanup | disabled |
 | `--refine` | Second pass for literary polish | disabled |
 | `--tts` | Generate audio (Edge-TTS) | disabled |
@@ -185,8 +186,11 @@ NIM_API_KEY=...
 
 # Performance
 REQUEST_TIMEOUT=900
-MAX_TOKENS_PER_CHUNK=450  # Token-based chunking (default: 450 tokens)
+MAX_TOKENS_PER_CHUNK=450     # Token-based chunking (default: 450 tokens)
+PARALLEL_TRANSLATIONS=1      # Concurrent chunks (cloud only; Ollama stays at 1)
 ```
+
+**Faster on cloud providers?** Set `PARALLEL_TRANSLATIONS` (or `--parallel N`, or the "Parallel requests" field in the web UI) above 1 to translate several chunks at once. Local providers (Ollama) ignore it since a single instance serializes requests. Higher values are faster but can hit provider rate limits.
 
 **Multiple API keys?** Any `*_API_KEY` variable accepts a comma-separated list (e.g. `GEMINI_API_KEY=key1,key2,key3`). The system rotates between keys automatically when one hits a rate limit - useful to chain free-tier accounts. See [docs/API_KEY_ROTATION.md](docs/API_KEY_ROTATION.md).
 

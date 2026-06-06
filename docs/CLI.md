@@ -40,6 +40,7 @@ python translate.py -i input_file -o output_file
 | `-m, --model` | Model name | qwen3:14b |
 | `--provider` | ollama / openrouter / openai / gemini / mistral / deepseek / poe / nim | ollama |
 | `--api_endpoint` | API URL | http://localhost:11434/api/generate |
+| `--parallel` | Chunks translated concurrently. Only cloud providers benefit; local providers (Ollama) are forced to 1. Values > 1 drop cross-chunk context | 1 |
 
 ### API Keys
 
