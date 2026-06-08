@@ -36,6 +36,7 @@ LEVEL 3 - Translation (PlaceholderManager):
     → Restored: "[id5]Bonjour[id6]" (global indices)
 """
 import re
+import copy as _copy
 from collections import Counter
 from typing import List, Dict, Any, Optional, Callable, Tuple
 from lxml import etree
@@ -995,39 +996,46 @@ def _reconstruct_html(
         Reconstructed HTML string
     """
     if bilingual and original_chunks:
-        # Bilingual mode: wrap each original/translation pair in styled divs
-        combined_parts = []
-        for i, (orig_chunk, trans_chunk) in enumerate(zip(original_chunks, translated_chunks)):
-            # Get original text from chunk (has local indices like [id0], [id1])
-            orig_text_local = orig_chunk.get('text', '')
-            global_indices = orig_chunk.get('global_indices', [])
+        # Bilingual mode: reconstruct the FULL source and FULL translation as
+        # two complete, well-formed documents, then interleave them at the
+        # paragraph level (each source paragraph immediately followed by its
+        # translation). We must NOT reconstruct per chunk: a chapter is often
+        # wrapped in a container element (e.g. <div class="Section13">) that
+        # spans many chunks, so a single chunk's restored fragment has
+        # unbalanced nesting. Reparsing such fragments in isolation corrupted
+        # the document and truncated most of the chapter (discussion #199).
 
-            # Restore global indices in original text before tag restoration
-            # The chunk text has local indices (0, 1, 2...) that need to be
-            # converted back to global indices before we can restore tags
-            orig_text_global = PlaceholderManager.restore_to_global(orig_text_local, global_indices)
-
-            # Restore tags in both original and translated. Escape stray
-            # < and > on both sides before tag restoration so any literal
-            # angle brackets present in text content (LLM passthrough or
-            # source-text markers like Korean webnovel <Skill> windows)
-            # do not corrupt the XML when the body is reinjected. See
-            # _escape_stray_angle_brackets() below.
-            orig_restored = tag_preserver.restore_tags(
-                _escape_stray_angle_brackets(orig_text_global), global_tag_map
+        # Rebuild the full original by joining every chunk's source (each
+        # chunk holds LOCAL placeholders + the global_indices needed to map
+        # them back), then restoring tags once over the whole body.
+        orig_joined = ''.join(
+            PlaceholderManager.restore_to_global(
+                c.get('text', ''), c.get('global_indices', [])
             )
-            trans_restored = tag_preserver.restore_tags(
-                _escape_stray_angle_brackets(trans_chunk), global_tag_map
-            )
+            for c in original_chunks
+        )
+        # Escape stray < and > before tag restoration so literal angle
+        # brackets in the text (LLM passthrough, Korean webnovel <Skill>
+        # markers, …) don't corrupt the XML when the body is reinjected.
+        orig_full_html = tag_preserver.restore_tags(
+            _escape_stray_angle_brackets(orig_joined), global_tag_map
+        )
+        trans_full_html = tag_preserver.restore_tags(
+            _escape_stray_angle_brackets(''.join(translated_chunks)), global_tag_map
+        )
 
-            # Create bilingual block with inline styling (no CSS required)
-            bilingual_block = f'''<div class="bilingual-chunk" style="margin-bottom: 1.5em; padding-bottom: 1em; border-bottom: 1px dashed #ccc;">
-<div class="original" style="color: #666; font-size: 0.9em;">{orig_restored}</div>
-<div class="translation" style="margin-top: 0.5em;">{trans_restored}</div>
-</div>'''
-            combined_parts.append(bilingual_block)
+        interleaved = _interleave_bilingual(orig_full_html, trans_full_html)
+        if interleaved is not None:
+            return interleaved
 
-        return ''.join(combined_parts)
+        # Lossless fallback: if the two documents' container structures don't
+        # align (e.g. a placeholder-recovery fallback reshaped the
+        # translation), emit the full source then the full translation. The
+        # layout is coarser but no text is dropped.
+        return (
+            f'<div class="bilingual-original" style="{_BILINGUAL_ORIGINAL_STYLE}">{orig_full_html}</div>'
+            f'<div class="bilingual-translation" style="{_BILINGUAL_TRANSLATION_STYLE}">{trans_full_html}</div>'
+        )
     else:
         # Standard mode: just join translated chunks
         full_translated_text = ''.join(translated_chunks)
@@ -1052,6 +1060,147 @@ def _escape_stray_angle_brackets(text: str) -> str:
     so they are untouched. Existing HTML entities like &lt; in the text stay
     intact because we do not re-escape '&'."""
     return text.replace('<', '&lt;').replace('>', '&gt;')
+
+
+# Inline styles for bilingual output (kept inline so the EPUB renders without
+# requiring an extra stylesheet).
+_BILINGUAL_ORIGINAL_STYLE = "color: #666; font-size: 0.9em;"
+_BILINGUAL_TRANSLATION_STYLE = "margin-bottom: 1em; padding-bottom: 0.5em; border-bottom: 1px dashed #ccc;"
+
+# Block-level container tags: bilingual interleaving recurses INTO these and
+# rebuilds them once, pairing their children. Everything else (p, h1-6, span…)
+# is treated as a leaf "paragraph" unit emitted as source-then-translation.
+# This keeps container structure (e.g. <div class="Section13"> wrapping a whole
+# chapter) intact instead of duplicating or fragmenting it.
+_BILINGUAL_CONTAINER_TAGS = frozenset({
+    'body', 'div', 'section', 'article', 'aside', 'nav', 'header', 'footer',
+    'main', 'blockquote', 'ul', 'ol', 'li', 'dl', 'dd', 'dt', 'table',
+    'tbody', 'thead', 'tfoot', 'tr', 'td', 'th', 'figure', 'figcaption',
+})
+
+
+def _local_tag(el) -> Optional[str]:
+    """Return an element's lowercase local tag name, or None for comments/PIs."""
+    tag = el.tag
+    if not isinstance(tag, str):
+        return None
+    return tag.split('}')[-1].lower()
+
+
+def _element_children(el) -> List:
+    """Real element children (skipping comments and processing instructions)."""
+    return [c for c in el if isinstance(c.tag, str)]
+
+
+def _has_translatable_text(el) -> bool:
+    """True if the element subtree contains any non-whitespace text."""
+    return bool("".join(el.itertext()).strip())
+
+
+def _same_bilingual_structure(orig_el, trans_el) -> bool:
+    """Verify two elements share the structure we rely on for interleaving.
+
+    We only need the CONTAINER skeleton to match (same container tags, same
+    number of children at each container level), because we pair children by
+    index when recursing into containers. Leaf paragraphs may differ inside
+    (the LLM can restructure inline tags), so we don't recurse into them.
+    """
+    if _local_tag(orig_el) in _BILINGUAL_CONTAINER_TAGS:
+        oc, tc = _element_children(orig_el), _element_children(trans_el)
+        if len(oc) != len(tc):
+            return False
+        return all(_same_bilingual_structure(o, t) for o, t in zip(oc, tc))
+    return True
+
+
+def _merge_bilingual(orig_el, trans_el, out_parent) -> None:
+    """Append interleaved source/translation nodes for one element pair.
+
+    Containers are rebuilt once (preserving tag, attributes and text) with
+    their children interleaved. Leaf paragraphs are emitted as a styled
+    source copy followed by a styled translation copy; blank/separator leaves
+    (no translatable text) are emitted once to avoid duplicating empty lines.
+    """
+    if _local_tag(orig_el) in _BILINGUAL_CONTAINER_TAGS:
+        new = etree.SubElement(out_parent, orig_el.tag)
+        for k, v in orig_el.attrib.items():
+            new.set(k, v)
+        new.text = orig_el.text
+        orig_children = _element_children(orig_el)
+        trans_children = _element_children(trans_el)
+        for oc, tc in zip(orig_children, trans_children):
+            before = len(new)
+            _merge_bilingual(oc, tc, new)
+            # Preserve inter-element whitespace/newlines from the source.
+            if len(new) > before and oc.tail:
+                new[-1].tail = oc.tail
+        return
+
+    # Leaf paragraph
+    if _has_translatable_text(orig_el):
+        od = etree.SubElement(out_parent, 'div')
+        od.set('class', 'bilingual-original')
+        od.set('style', _BILINGUAL_ORIGINAL_STYLE)
+        oc = _copy.deepcopy(orig_el)
+        oc.tail = None
+        od.append(oc)
+
+        td = etree.SubElement(out_parent, 'div')
+        td.set('class', 'bilingual-translation')
+        td.set('style', _BILINGUAL_TRANSLATION_STYLE)
+        tc = _copy.deepcopy(trans_el)
+        tc.tail = None
+        td.append(tc)
+    else:
+        # Blank/separator block: keep the original once for spacing.
+        c = _copy.deepcopy(orig_el)
+        c.tail = None
+        out_parent.append(c)
+
+
+def _interleave_bilingual(orig_html: str, trans_html: str) -> Optional[str]:
+    """Interleave full source and translation HTML at the paragraph level.
+
+    Both inputs are complete, well-formed reconstructions of the SAME body
+    (identical tag skeleton, since tags come from the same placeholder map and
+    the LLM only translates the text between them). Operating on the full
+    documents — not per chunk — is essential: a chapter is often wrapped in a
+    container element that spans many chunks, so a single chunk's restored
+    fragment has unbalanced nesting and cannot be safely reparsed in isolation
+    (this caused catastrophic truncation/data loss, discussion #199).
+
+    Returns interleaved inner HTML, or None if the documents cannot be parsed
+    or their container structures don't align (caller falls back to a coarse
+    but lossless source-then-translation layout).
+    """
+    parser = etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=False)
+    try:
+        o_root = etree.fromstring(f"<temp>{orig_html}</temp>".encode('utf-8'), parser)
+        t_root = etree.fromstring(f"<temp>{trans_html}</temp>".encode('utf-8'), parser)
+    except (etree.XMLSyntaxError, ValueError):
+        return None
+    if o_root is None or t_root is None:
+        return None
+
+    o_children = _element_children(o_root)
+    t_children = _element_children(t_root)
+    if len(o_children) != len(t_children):
+        return None
+    if not all(_same_bilingual_structure(o, t) for o, t in zip(o_children, t_children)):
+        return None
+
+    out = etree.Element('temp')
+    out.text = o_root.text
+    for oc, tc in zip(o_children, t_children):
+        before = len(out)
+        _merge_bilingual(oc, tc, out)
+        if len(out) > before and oc.tail:
+            out[-1].tail = oc.tail
+
+    parts = [out.text] if out.text else []
+    for child in out:
+        parts.append(etree.tostring(child, encoding='unicode', method='xml'))
+    return "".join(parts)
 
 
 def _replace_body(
